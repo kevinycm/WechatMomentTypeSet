@@ -3,6 +3,7 @@
 # 1.    python 3.12.4版本
 # 2.    pip install -r requirements.txt
 # 3.    python server.py
+## 3.1  浏览器访问 http://localhost:8888/
 # 4.    test cases:
 ## 4.1  121：时间、文字、9张图
 ## 4.2  122：时间、文字、8张图
