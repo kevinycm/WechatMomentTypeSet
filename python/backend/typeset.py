@@ -8,7 +8,7 @@ class LayoutEngine:
         self.margin_left = 100
         self.margin_right = 100
         self.margin_top = 100
-        self.margin_bottom = 100
+        self.margin_bottom = 180
         self.available_width = 2480 - self.margin_left - self.margin_right
         self.available_height = 3508 - self.margin_top - self.margin_bottom
         self.time_height = 104
@@ -58,6 +58,7 @@ class LayoutEngine:
 
         # 计算每行可容纳的字符数（根据字体大小）
         chars_per_line = int(self.available_width / (self.font_size))
+        print(chars_per_line)
         
         # 分行处理
         lines = []

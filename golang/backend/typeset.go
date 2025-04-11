@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"unicode/utf8"
 )
 
 // Component represents a basic component in the layout
@@ -92,9 +93,9 @@ func NewTextComponent(id string, text string) *TextComponent {
 	return &TextComponent{
 		ID:         id,
 		Text:       text,
-		Width:      600, // Default width
-		LineHeight: 24,  // Default line height
-		FontSize:   16,  // Default font size
+		Width:      2280, // availableWidth
+		LineHeight: 75,   // lineHeight
+		FontSize:   50,   // fontSize
 	}
 }
 
@@ -148,8 +149,8 @@ func NewTimeComponent(id string, time string) *TimeComponent {
 	return &TimeComponent{
 		ID:     id,
 		Time:   time,
-		Width:  200,
-		Height: 30,
+		Width:  2280, // availableWidth
+		Height: 104,  // timeHeight
 	}
 }
 
@@ -292,8 +293,10 @@ type LayoutEngine struct {
 	availableWidth  float64
 	availableHeight float64
 	timeHeight      float64
+	fontSize        float64
 	lineHeight      float64
 	currentY        float64
+	timeAreaBottom  float64 // 时间区域底部到页面顶部的高度
 }
 
 // Page represents a page in the layout
@@ -330,9 +333,10 @@ func NewLayoutEngine(entry TestCase) *LayoutEngine {
 		marginLeft:   100,
 		marginRight:  100,
 		marginTop:    100,
-		marginBottom: 100,
-		timeHeight:   100,
-		lineHeight:   40,
+		marginBottom: 160,
+		timeHeight:   104,
+		fontSize:     50,
+		lineHeight:   75, // 1.5 * fontSize
 	}
 	engine.availableWidth = 2480 - engine.marginLeft - engine.marginRight
 	engine.availableHeight = 3508 - engine.marginTop - engine.marginBottom
@@ -368,29 +372,74 @@ func (e *LayoutEngine) addTime() {
 	x0 := e.marginLeft
 	y0 := e.marginTop
 	x1 := x0 + e.availableWidth
-	y1 := y0 + e.timeHeight
+	y1 := y0 + e.timeHeight*1.5
 	e.currentPage.TimeArea = [][]float64{{x0, y0}, {x1, y1}}
 	e.currentPage.Time = timeStr
 	e.currentY = y1
+	// 设置时间区域底部到页面顶部的高度
+	e.timeAreaBottom = y1 - e.marginTop
 }
 
 func (e *LayoutEngine) processText(text string) {
-	if text == "" {
+	if strings.TrimSpace(text) == "" {
 		return
 	}
-	lines := strings.Split(text, "\n")
+
+	// 计算每行可容纳的字符数（根据字体大小）
+	// 中文字符宽度约为字体大小的1.2倍
+	charsPerLine := int(e.availableWidth / (e.fontSize * 1.0))
+
+	// 分行处理
+	var lines []string
+	for _, paragraph := range strings.Split(text, "\n") {
+		charCount := utf8.RuneCountInString(paragraph)
+		if charCount <= charsPerLine {
+			lines = append(lines, paragraph)
+		} else {
+			// 处理长段落
+			runes := []rune(paragraph)
+			for i := 0; i < len(runes); i += charsPerLine {
+				end := i + charsPerLine
+				if end > len(runes) {
+					end = len(runes)
+				}
+				line := string(runes[i:end])
+				lines = append(lines, line)
+			}
+		}
+	}
+
 	currentLine := 0
 	for currentLine < len(lines) {
-		var remainingHeight float64
+		// 计算当前页面可用高度，减去时间区域的高度
+		var availableHeight float64
 		if e.currentPage.Page == 1 {
-			remainingHeight = e.availableHeight - e.timeHeight
+			availableHeight = e.availableHeight - e.timeAreaBottom
 		} else {
-			remainingHeight = e.availableHeight
+			availableHeight = e.availableHeight
 		}
-		availableLines := int(math.Min(float64(len(lines)-currentLine), remainingHeight/e.lineHeight))
+
+		if availableHeight <= 0 {
+			e.newPage()
+			availableHeight = e.availableHeight
+		}
+
+		// 计算可容纳的行数
+		availableLines := int(math.Min(float64(len(lines)-currentLine),
+			availableHeight/e.lineHeight))
+
+		if availableLines <= 0 {
+			e.newPage()
+			continue
+		}
+
+		// 提取当前可显示的行
 		chunk := lines[currentLine : currentLine+availableLines]
+		// 添加文本块
 		e.addTextChunk(chunk)
 		currentLine += availableLines
+
+		// 如果还有未显示的行，创建新页面
 		if currentLine < len(lines) {
 			e.newPage()
 		}

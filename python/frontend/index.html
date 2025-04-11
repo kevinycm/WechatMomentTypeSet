@@ -184,7 +184,7 @@
         .page-number {
             position: absolute;
             bottom: 100px;
-            right: 150px;
+            right: 100px;
             font-size: 50px;
             color: #95a5a6;
         }
@@ -415,7 +415,7 @@
             // 添加页码
             const pageNum = document.createElement('div');
             pageNum.className = 'page-number';
-            pageNum.textContent = `第 ${pageIndex + 1} 页`;
+            pageNum.textContent = `${pageIndex + 1}`;
             pageDiv.appendChild(pageNum);
             
             return pageDiv;
