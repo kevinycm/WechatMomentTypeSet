@@ -11,8 +11,13 @@ class LayoutEngine:
         self.margin_bottom = 100
         self.available_width = 2480 - self.margin_left - self.margin_right
         self.available_height = 3508 - self.margin_top - self.margin_bottom
-        self.time_height = 100
-        self.line_height = 40  # 假设每行文本高度为20像素
+        self.time_height = 104
+        # 设置默认字体大小
+        self.font_size = 50
+        # 设置行高，通常为字体大小的1.5倍
+        self.line_height = 1.5 * self.font_size
+        # 时间区域底部到页面顶部的高度
+        self.time_area_bottom = 0
 
     def process_entry(self):
         self.new_page()
@@ -38,41 +43,78 @@ class LayoutEngine:
             return
         time_str = self.entry['time']
         x0 = self.margin_left
-        y0 = self.margin_top
+        y0 = self.current_y
         x1 = x0 + self.available_width
-        y1 = y0 + self.time_height
+        y1 = y0 + self.time_height * 1.5
         self.current_page['time_area'] = [(x0, y0), (x1, y1)]
         self.current_page['time'] = time_str
         self.current_y = y1
+        # 设置时间区域底部到页面顶部的高度
+        self.time_area_bottom = y1 - self.margin_top
 
     def process_text(self, text):
         if not text.strip():
             return
-        lines = text.split('\n')
+
+        # 计算每行可容纳的字符数（根据字体大小）
+        chars_per_line = int(self.available_width / (self.font_size))
+        
+        # 分行处理
+        lines = []
+        for paragraph in text.split('\n'):
+            print(paragraph)
+            if len(paragraph) <= chars_per_line:
+                lines.append(paragraph)
+            else:
+                # 处理长段落
+                for i in range(0, len(paragraph), chars_per_line):
+                    end = i + chars_per_line
+                    if end > len(paragraph):
+                        end = len(paragraph)
+                    lines.append(paragraph[i:end])
+
         current_line = 0
         while current_line < len(lines):
-            if self.current_page['page'] == 1:
-                remaining_height = self.available_height - self.time_height
-            else:
-                remaining_height = self.available_height
+            # 计算当前页面可用高度，减去时间区域的高度
+            available_height = self.available_height - self.time_area_bottom
+            
+            if available_height <= 0:
+                self.new_page()
+                available_height = self.available_height
+            
+            # 计算可容纳的行数
             available_lines = min(len(lines) - current_line, 
-                                 remaining_height // self.line_height)
+                                 int(available_height / self.line_height))
+            
+            if available_lines <= 0:
+                self.new_page()
+                continue
+            
+            # 提取当前可显示的行
             chunk = lines[current_line:current_line + available_lines]
+            # 添加文本块
             self.add_text_chunk(chunk)
             current_line += available_lines
+            
+            # 如果还有未显示的行，创建新页面
             if current_line < len(lines):
                 self.new_page()
 
     def add_text_chunk(self, chunk):
+        # 起始Y坐标
         start_y = self.current_y
+        # 计算文本高度 = 行数 * 行高
         text_height = len(chunk) * self.line_height
+        # 定义文本区域坐标
         area = [
             (self.margin_left, start_y),
             (self.margin_left + self.available_width, start_y + text_height)
         ]
+        # 添加文本区域和内容
         self.current_page['text_areas'].append(area)
         self.current_page['texts'].append('\n'.join(chunk))
-        self.current_y += text_height
+        # 更新当前Y坐标
+        self.current_y = start_y + text_height
 
     def process_pictures(self, pictures):
         layout = self.get_layout(len(pictures))
@@ -92,7 +134,8 @@ class LayoutEngine:
 
     def process_picture_row(self, row_pics):
         while True:
-            available_height = self.available_height - (self.current_y - self.margin_top)
+            # 计算可用高度
+            available_height = self.available_height - (self.current_y - self.time_height)
             if available_height <= 0:
                 self.new_page()
                 continue
@@ -108,6 +151,7 @@ class LayoutEngine:
                 total_width += scaled_width
 
             if len(row_pics) == 1:
+                # 单张图片处理
                 if common_height <= available_height:
                     self.place_pictures(row_pics, scaled_widths, common_height)
                     break
@@ -115,7 +159,8 @@ class LayoutEngine:
                     self.new_page()
                     continue
             else:
-                # 如果总宽度超过可用宽度，则需要调整
+                # 多张图片处理
+                # 如果总宽度超过可用宽度，需要调整
                 if total_width > self.available_width:
                     # 计算缩放因子
                     scale_factor = self.available_width / total_width
@@ -123,8 +168,9 @@ class LayoutEngine:
                     total_width = self.available_width
                     scaled_widths = [w * scale_factor for w in scaled_widths]
                 
-                # 检查调整后的高度是否仍然适合
+                # 检查调整后的高度是否适合
                 if common_height <= available_height:
+                    # 检查总宽度是否与可用宽度差距太大
                     if abs(total_width - self.available_width) > 1:
                         self.new_page()
                         continue
