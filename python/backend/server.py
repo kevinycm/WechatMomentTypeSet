@@ -361,7 +361,7 @@ sample_data = {
 
 class MainHandler(tornado.web.RequestHandler):
     def get(self):
-        self.render("index.html")
+        self.render("../frontend/index.html")
 
 class LayoutHandler(tornado.web.RequestHandler):
     def get(self, entry_id):

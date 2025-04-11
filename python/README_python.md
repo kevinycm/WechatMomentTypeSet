@@ -1,5 +1,3 @@
-# WechatMomentTypeSet
-
 ### 1.    python 3.12.4版本
 ### 2.    pip install -r requirements.txt
 ### 3.    python server.py
