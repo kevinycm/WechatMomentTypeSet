@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Continuous Layout Preview</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            background-color: #f0f0f0;
+            font-family: Arial, sans-serif;
+            overflow-x: hidden;
+        }
+        .page-container {
+            position: relative;
+            width: 744px; /* 2480 * 0.3 */
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .page {
+            width: 2480px;
+            height: 3508px;
+            background-color: white;
+            position: relative;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            transform: scale(0.3);
+            transform-origin: 0 0;
+            margin-bottom: -2455.6px; /* (3508 * 0.7) */
+        }
+        .time-display {
+            position: absolute;
+            font-size: 104px;
+            line-height: 1.5;
+            color: #2c3e50;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+        }
+        .text-area {
+            position: absolute;
+            font-size: 50px;
+            line-height: 75px;
+            color: #333;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        .picture-area {
+            position: absolute;
+            background-color: #f8f9fa;
+            border: 3px solid #ecf0f1;
+            box-sizing: border-box;
+            overflow: hidden;
+        }
+        .picture-area img {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+        .page-number {
+            position: absolute;
+            right: 100px;
+            bottom: 100px;
+            font-size: 50px;
+            color: #95a5a6;
+        }
+        .controls {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background-color: white;
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            z-index: 1000;
+        }
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        .zoom-controls {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background-color: white;
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            z-index: 1000;
+        }
+        .zoom-controls button {
+            padding: 5px 10px;
+            margin: 0 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="controls">
+        <button onclick="loadSampleData()">Load Sample Data</button>
+        <button onclick="clearPages()">Clear</button>
+    </div>
+    <div class="zoom-controls">
+        <button onclick="zoomOut()">-</button>
+        <span id="zoom-level">30%</span>
+        <button onclick="zoomIn()">+</button>
+    </div>
+    <div id="page-container" class="page-container"></div>
+
+    <script>
+        // 全局变量
+        let currentZoom = 0.3;
+        const A4_WIDTH = 2480;
+        const A4_HEIGHT = 3508;
+        
+        // 初始化
+        document.addEventListener('DOMContentLoaded', () => {
+            updateZoomDisplay();
+        });
+
+        // 缩放控制
+        function zoomIn() {
+            currentZoom = Math.min(currentZoom + 0.1, 1.0);
+            updateZoom();
+        }
+
+        function zoomOut() {
+            currentZoom = Math.max(currentZoom - 0.1, 0.1);
+            updateZoom();
+        }
+
+        function updateZoom() {
+            const container = document.getElementById('page-container');
+            const pages = container.querySelectorAll('.page');
+            
+            // 更新容器宽度
+            container.style.width = `${A4_WIDTH * currentZoom}px`;
+            
+            // 更新每个页面的缩放和间距
+            pages.forEach((page, index) => {
+                page.style.transform = `scale(${currentZoom})`;
+                page.style.marginBottom = `${-A4_HEIGHT * (1 - currentZoom)}px`;
+            });
+            
+            // 更新最后一页的margin-bottom
+            if (pages.length > 0) {
+                pages[pages.length - 1].style.marginBottom = '0';
+            }
+            
+            updateZoomDisplay();
+        }
+
+        function updateZoomDisplay() {
+            document.getElementById('zoom-level').textContent = `${Math.round(currentZoom * 100)}%`;
+        }
+
+        function setElementPosition(element, area) {
+            const [start, end] = area;
+            element.style.left = `${start[0]}px`;
+            element.style.top = `${start[1]}px`;
+            element.style.width = `${Math.abs(end[0] - start[0])}px`;
+            element.style.height = `${Math.abs(end[1] - start[1])}px`;
+        }
+
+        function createImageErrorHandler(url) {
+            return function() {
+                const placeholder = document.createElement('div');
+                placeholder.style.width = '100%';
+                placeholder.style.height = '100%';
+                placeholder.style.display = 'flex';
+                placeholder.style.flexDirection = 'column';
+                placeholder.style.justifyContent = 'center';
+                placeholder.style.alignItems = 'center';
+                placeholder.style.backgroundColor = '#f1f1f1';
+                placeholder.style.color = '#999';
+                placeholder.style.padding = '20px';
+                placeholder.style.textAlign = 'center';
+                placeholder.style.boxSizing = 'border-box';
+                
+                const errorIcon = document.createElement('div');
+                errorIcon.textContent = '❌';
+                errorIcon.style.fontSize = '50px';
+                errorIcon.style.marginBottom = '20px';
+                
+                const errorText = document.createElement('div');
+                errorText.textContent = '图片加载失败';
+                errorText.style.fontSize = '30px';
+                errorText.style.marginBottom = '10px';
+                
+                const urlText = document.createElement('div');
+                urlText.textContent = url;
+                urlText.style.fontSize = '20px';
+                urlText.style.wordBreak = 'break-all';
+                
+                placeholder.appendChild(errorIcon);
+                placeholder.appendChild(errorText);
+                placeholder.appendChild(urlText);
+                
+                this.parentNode.appendChild(placeholder);
+                this.remove();
+            };
+        }
+
+        function createPage(pageData, pageNumber) {
+            const page = document.createElement('div');
+            page.className = 'page';
+            
+            // Create time area
+            if (pageData.time) {
+                const timeDiv = document.createElement('div');
+                timeDiv.className = 'time-display';
+                
+                if (pageData.time_area) {
+                    setElementPosition(timeDiv, pageData.time_area);
+                } else {
+                    timeDiv.style.left = '150px';
+                    timeDiv.style.top = '150px';
+                }
+                
+                timeDiv.textContent = pageData.time;
+                page.appendChild(timeDiv);
+            }
+            
+            // Create text areas
+            if (pageData.text_areas && pageData.texts) {
+                pageData.text_areas.forEach((area, index) => {
+                    const textArea = document.createElement('div');
+                    textArea.className = 'text-area';
+                    setElementPosition(textArea, area);
+                    textArea.textContent = pageData.texts[index];
+                    page.appendChild(textArea);
+                });
+            }
+            
+            // Create picture areas
+            if (pageData.pictures) {
+                pageData.pictures.forEach(pic => {
+                    const pictureArea = document.createElement('div');
+                    pictureArea.className = 'picture-area';
+                    setElementPosition(pictureArea, pic.area);
+                    
+                    const img = document.createElement('img');
+                    img.src = pic.url;
+                    img.onerror = createImageErrorHandler(pic.url);
+                    
+                    pictureArea.appendChild(img);
+                    page.appendChild(pictureArea);
+                });
+            }
+
+            // Add page number
+            const pageNumberElement = document.createElement('div');
+            pageNumberElement.className = 'page-number';
+            pageNumberElement.textContent = `${pageNumber}`;
+            page.appendChild(pageNumberElement);
+            
+            return page;
+        }
+
+        function renderPages(pages) {
+            const container = document.getElementById('page-container');
+            container.innerHTML = '';
+            
+            if (!pages || pages.length === 0) {
+                console.error('No pages to render');
+                return;
+            }
+            
+            pages.forEach((pageData, index) => {
+                const page = createPage(pageData, index + 1);
+                container.appendChild(page);
+            });
+            
+            // 渲染完成后调整视图
+            setTimeout(() => {
+                updateZoom();
+            }, 50);
+        }
+
+        function loadSampleData() {
+            fetch('/continuous-layout-sample')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    console.log('Received data:', data);
+                    if (!data.pages || !Array.isArray(data.pages)) {
+                        throw new Error('Invalid data format: pages array is missing');
+                    }
+                    renderPages(data.pages);
+                })
+                .catch(error => {
+                    console.error('Error loading sample data:', error);
+                    alert('Error loading sample data: ' + error.message);
+                });
+        }
+
+        function clearPages() {
+            document.getElementById('page-container').innerHTML = '';
+        }
+    </script>
+</body>
+</html> 

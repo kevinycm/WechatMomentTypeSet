@@ -15,9 +15,11 @@ This project provides a layout engine for WeChat Moments content, implemented in
 ├── golang/                  # Go implementation
 │   ├── backend/
 │   │   ├── server.go       # HTTP server
-│   │   └── typeset.go      # Layout engine
+│   │   ├── typeset.go      # Single page layout engine
+│   │   └── continuous_layout.go  # Continuous layout engine
 │   ├── frontend/
-│   │   └── index.html      # Frontend interface
+│   │   ├── index.html      # Single page layout interface
+│   │   └── continuous.html # Continuous layout interface
 │   └── main.go             # Application entry point
 ├── requirements.md         # Project requirements
 └── README.md              # This file
@@ -27,11 +29,37 @@ This project provides a layout engine for WeChat Moments content, implemented in
 
 - Layout engine for WeChat Moments content
 - Support for text and image layout
+- Two layout modes (Go implementation):
+  - Single page layout with fixed dimensions
+  - Continuous layout with dynamic page creation
 - Automatic page breaking for long content
 - Responsive image scaling and positioning
 - 9-grid image layout algorithm
 - Multi-page support
 - Web interface for visualization
+- Interactive zoom controls (continuous layout)
+
+## Layout Algorithms
+
+### Single Page Layout
+- Fixed A4 page size (3508 x 2480 pixels)
+- Predefined margins and spacing
+- Support for text and 1-9 images
+- Automatic content overflow handling
+
+### Continuous Layout (Go Implementation)
+- Dynamic page creation based on content
+- Smart spacing algorithm:
+  - 150px between entries
+  - 30px between elements
+  - 20px between images
+- Optimized layout rules:
+  - Time area: 104px height
+  - Text: 50px font size, 75px line height
+  - Single images: 1695px default height
+  - Multiple images: 9-grid layout
+- Prevents content splitting across pages
+- Interactive zoom control (10% - 100%)
 
 ## Python Implementation
 
@@ -49,7 +77,7 @@ python backend/server.py
 
 ## Go Implementation
 
-The Go implementation provides a high-performance alternative with the same functionality.
+The Go implementation provides a high-performance alternative with enhanced functionality.
 
 ### Requirements
 - Go 1.16+
@@ -78,6 +106,10 @@ Both implementations support:
 Both implementations provide:
 - `GET /layout/{id}`: Get layout for a specific test case
   - Example: `http://localhost:8888/layout/121`
+
+Go implementation additionally provides:
+- `GET /continuous-layout-sample`: Get sample data for continuous layout
+  - Example: `http://localhost:8888/continuous-layout-sample`
 
 ## Test Cases
 
