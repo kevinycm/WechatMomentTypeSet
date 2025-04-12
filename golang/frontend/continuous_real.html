@@ -30,12 +30,27 @@
         }
         .time-display {
             position: absolute;
-            font-size: 104px;
-            line-height: 1.5;
-            color: #2c3e50;
-            font-weight: 500;
             display: flex;
             align-items: center;
+            font-weight: 500;
+            white-space: nowrap;
+            width: calc(100% - 320px); /* 减去左右两边的边距 */
+            justify-content: space-between;
+            left: 160px; /* 设置左边距 */
+            right: 160px; /* 设置右边距 */
+        }
+        .date-part {
+            background-color: #e74c3c;
+            padding: 10px 30px;
+            border-radius: 10px;
+            color: white;
+            font-size: 60px;
+            line-height: 1;
+        }
+        .time-part {
+            color: #2c3e50;
+            font-size: 60px;
+            line-height: 1;
         }
         .text-area {
             position: absolute;
@@ -63,9 +78,9 @@
         }
         .page-info {
             position: absolute;
-            bottom: 100px;
-            left: 100px;
-            right: 100px;
+            bottom: 160px;
+            left: 160px;
+            right: 160px;
             font-size: 50px;
             color: #95a5a6;
             display: flex;
@@ -236,6 +251,34 @@
             };
         }
 
+        function createTimeDisplay(entry, area) {
+            const timeDiv = document.createElement('div');
+            timeDiv.className = 'time-display';
+            
+            // 创建日期部分（月日和星期）
+            const datePart = document.createElement('div');
+            datePart.className = 'date-part';
+            datePart.textContent = entry.date_part;
+            
+            // 创建时间部分（时分）
+            const timePart = document.createElement('div');
+            timePart.className = 'time-part';
+            timePart.textContent = entry.time_part;
+            
+            // 添加到时间显示div
+            timeDiv.appendChild(datePart);
+            timeDiv.appendChild(timePart);
+            
+            // 设置位置
+            if (area && area.length >= 2) {
+                timeDiv.style.top = area[0][1] + 'px';
+            } else {
+                timeDiv.style.top = '100px';
+            }
+            
+            return timeDiv;
+        }
+
         function createPage(pageData) {
             const page = document.createElement('div');
             page.className = 'page';
@@ -258,10 +301,7 @@
             pageData.entries.forEach((entry, index) => {
                 // 添加时间区域
                 if (entry.time && entry.time_area) {
-                    const timeDiv = document.createElement('div');
-                    timeDiv.className = 'time-display';
-                    timeDiv.textContent = entry.time;
-                    setElementPosition(timeDiv, entry.time_area);
+                    const timeDiv = createTimeDisplay(entry, entry.time_area);
                     page.appendChild(timeDiv);
                 }
 

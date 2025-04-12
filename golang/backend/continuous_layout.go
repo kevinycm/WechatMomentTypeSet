@@ -1,8 +1,10 @@
 package backend
 
 import (
+	"fmt"
 	"math"
 	"strings"
+	"time"
 	"unicode/utf8"
 )
 
@@ -16,7 +18,9 @@ type ContinuousLayoutPage struct {
 
 // PageEntry represents a single entry's layout information on a page
 type PageEntry struct {
-	Time      string        `json:"time"` // 格式：2025年3月30日 17:50
+	Time      string        `json:"time"`      // 格式：2025年3月30日 17:50
+	DatePart  string        `json:"date_part"` // 格式：5月23日 周一
+	TimePart  string        `json:"time_part"` // 格式：08:28
 	TimeArea  [][]float64   `json:"time_area"`
 	TextAreas [][][]float64 `json:"text_areas"`
 	Texts     []string      `json:"texts"`
@@ -398,9 +402,55 @@ func (e *ContinuousLayoutEngine) addTime(timeStr string) {
 	x1 := x0 + e.availableWidth
 	y1 := y0 + e.timeHeight
 
+	// 解析时间字符串，支持多种格式
+	layouts := []string{
+		"2006-01-02 15:04:05",
+		"2006年1月2日 15:04",
+		"2006年01月02日 15:04",
+	}
+
+	var t time.Time
+	var err error
+	for _, layout := range layouts {
+		t, err = time.Parse(layout, timeStr)
+		if err == nil {
+			break
+		}
+	}
+
+	if err != nil {
+		// 如果解析失败，使用原始字符串
+		entry := PageEntry{
+			Time:      timeStr,
+			TimeArea:  [][]float64{{x0, y0}, {x1, y1}},
+			TextAreas: make([][][]float64, 0),
+			Texts:     make([]string, 0),
+			Pictures:  make([]Picture, 0),
+		}
+		e.currentPage.Entries = append(e.currentPage.Entries, entry)
+		return
+	}
+
+	// 中文星期映射
+	weekdayMap := map[time.Weekday]string{
+		time.Sunday:    "周日",
+		time.Monday:    "周一",
+		time.Tuesday:   "周二",
+		time.Wednesday: "周三",
+		time.Thursday:  "周四",
+		time.Friday:    "周五",
+		time.Saturday:  "周六",
+	}
+
+	// 格式化日期和时间部分
+	datePart := fmt.Sprintf("%d月%d日 %s", t.Month(), t.Day(), weekdayMap[t.Weekday()])
+	timePart := fmt.Sprintf("%02d:%02d", t.Hour(), t.Minute())
+
 	// 创建新的 PageEntry
 	entry := PageEntry{
 		Time:      timeStr,
+		DatePart:  datePart,
+		TimePart:  timePart,
 		TimeArea:  [][]float64{{x0, y0}, {x1, y1}},
 		TextAreas: make([][][]float64, 0),
 		Texts:     make([]string, 0),
