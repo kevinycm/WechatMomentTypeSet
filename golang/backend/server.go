@@ -114,33 +114,40 @@ func formatTime(timeStr string) string {
 		t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute())
 }
 
-func (s *Server) handleContinuousLayoutSample(w http.ResponseWriter, r *http.Request) {
-	// Convert all test cases to entries and sort by ID
-	entries := make([]Entry, 0, len(SampleData))
-	ids := make([]int, 0, len(SampleData))
+// formatYearMonth extracts and formats year-month from time string
+func formatYearMonth(timeStr string) string {
+	t, err := time.Parse("2006-01-02 15:04:05", timeStr)
+	if err != nil {
+		return "" // Return empty string if parsing fails
+	}
+	return fmt.Sprintf("%d年%d月", t.Year(), t.Month())
+}
 
-	// First collect all IDs
-	for id := range SampleData {
-		ids = append(ids, id)
+// getYearMonthKey returns a sortable key for year-month grouping
+func getYearMonthKey(timeStr string) string {
+	t, err := time.Parse("2006-01-02 15:04:05", timeStr)
+	if err != nil {
+		return ""
+	}
+	return fmt.Sprintf("%d-%02d", t.Year(), t.Month())
+}
+
+func (s *Server) handleContinuousLayoutSample(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
 	}
 
-	// Sort IDs
-	sort.Ints(ids)
-
-	// Create entries in sorted order with original time strings
-	originalTimes := make(map[int]string)
-	for _, id := range ids {
-		testCase := SampleData[id]
-		originalTimes[id] = testCase.Time
-		entry := Entry{
-			Time:     formatTime(testCase.Time),
+	// Convert TestCase to Entry
+	var entries []Entry
+	for _, testCase := range SampleData {
+		entries = append(entries, Entry{
+			Time:     testCase.Time,
 			Text:     testCase.Text,
 			Pictures: testCase.Pictures,
-		}
-		entries = append(entries, entry)
+		})
 	}
 
-	// Create layout engine and process entries
 	engine := NewContinuousLayoutEngine(entries)
 	pages, err := engine.ProcessEntries()
 	if err != nil {
@@ -148,69 +155,9 @@ func (s *Server) handleContinuousLayoutSample(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	// Format the response to match frontend expectations
-	formattedPages := make([]map[string]interface{}, len(pages))
-	for i, page := range pages {
-		// Create text areas and texts slices
-		textAreas := make([][][]float64, len(page.TextAreas))
-		texts := make([]string, len(page.TextAreas))
-		for j, area := range page.TextAreas {
-			textAreas[j] = [][]float64{
-				{area[0][0], area[0][1]},
-				{area[1][0], area[1][1]},
-			}
-			texts[j] = page.Texts[j]
-		}
-
-		// Create pictures slice
-		pictures := make([]map[string]interface{}, len(page.Pictures))
-		for j, pic := range page.Pictures {
-			pictures[j] = map[string]interface{}{
-				"url": pic.URL,
-				"area": [][]float64{
-					{pic.Area[0][0], pic.Area[0][1]},
-					{pic.Area[1][0], pic.Area[1][1]},
-				},
-			}
-		}
-
-		// Create time area with safety checks
-		var timeArea [][]float64
-		if len(page.TimeArea) >= 2 && len(page.TimeArea[0]) >= 2 && len(page.TimeArea[1]) >= 2 {
-			timeArea = [][]float64{
-				{page.TimeArea[0][0], page.TimeArea[0][1]},
-				{page.TimeArea[1][0], page.TimeArea[1][1]},
-			}
-		} else {
-			// Default time area if not properly set
-			timeArea = [][]float64{
-				{100, 100},
-				{2380, 204},
-			}
-		}
-
-		// Get the original time string from the page time by parsing it back
-		yearMonth := ""
-		if t, err := time.Parse("2006年1月2日 15:04", page.Time); err == nil {
-			yearMonth = fmt.Sprintf("%d.%02d", t.Year(), t.Month())
-		}
-
-		formattedPage := map[string]interface{}{
-			"time":       page.Time,
-			"time_area":  timeArea,
-			"text_areas": textAreas,
-			"texts":      texts,
-			"pictures":   pictures,
-			"year_month": yearMonth,
-		}
-
-		formattedPages[i] = formattedPage
-	}
-
-	// Return the result
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"pages": formattedPages,
+		"pages": pages,
 	})
 }
 
@@ -220,85 +167,103 @@ func (s *Server) handleContinuousLayoutReal(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Get all IDs and sort by release_time in descending order
+	// 获取所有ID并按降序排序
 	var ids []int
 	for id := range RealData {
 		ids = append(ids, id)
 	}
+
+	// 按时间降序排序
 	sort.Slice(ids, func(i, j int) bool {
-		timeI, _ := time.Parse("2006-01-02 15:04:05", RealData[ids[i]].Time)
-		timeJ, _ := time.Parse("2006-01-02 15:04:05", RealData[ids[j]].Time)
+		timeI, errI := time.Parse("2006-01-02 15:04:05", RealData[ids[i]].Time)
+		timeJ, errJ := time.Parse("2006-01-02 15:04:05", RealData[ids[j]].Time)
+
+		// 如果解析出错，将其放到最后
+		if errI != nil {
+			return false
+		}
+		if errJ != nil {
+			return true
+		}
+
 		return timeI.After(timeJ)
 	})
 
-	// Convert all entries to the required format
-	entries := make([]Entry, 0, len(ids))
+	// 按年月分组
+	yearMonthGroups := make(map[string][]Entry)
+	yearMonthKeys := make([]string, 0)
 	for _, id := range ids {
 		testCase := RealData[id]
+		yearMonthKey := getYearMonthKey(testCase.Time)
+		if yearMonthKey == "" {
+			continue
+		}
+
+		if _, exists := yearMonthGroups[yearMonthKey]; !exists {
+			yearMonthKeys = append(yearMonthKeys, yearMonthKey)
+		}
+
 		entry := Entry{
 			Time:     formatTime(testCase.Time),
 			Text:     testCase.Text,
 			Pictures: testCase.Pictures,
 		}
-		entries = append(entries, entry)
+		yearMonthGroups[yearMonthKey] = append(yearMonthGroups[yearMonthKey], entry)
 	}
 
-	// Create layout engine and process entries
-	engine := NewContinuousLayoutEngine(entries)
-	pages, err := engine.ProcessEntries()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+	// 按年月降序排序
+	sort.Sort(sort.Reverse(sort.StringSlice(yearMonthKeys)))
+
+	// 处理每个年月组的数据
+	var allPages []ContinuousLayoutPage
+	pageNumber := 1
+
+	for _, yearMonthKey := range yearMonthKeys {
+		entries := yearMonthGroups[yearMonthKey]
+		if len(entries) == 0 {
+			continue
+		}
+
+		// 添加插页
+		// 使用当前年月组的时间来格式化年月
+		// 从yearMonthKey中提取年月信息
+		parts := strings.Split(yearMonthKey, "-")
+		if len(parts) != 2 {
+			continue
+		}
+		year, _ := strconv.Atoi(parts[0])
+		month, _ := strconv.Atoi(parts[1])
+		yearMonth := fmt.Sprintf("%d年%d月", year, month)
+
+		insertPage := ContinuousLayoutPage{
+			Page:      pageNumber,
+			IsInsert:  true,
+			YearMonth: yearMonth,
+			Entries:   []PageEntry{},
+		}
+		allPages = append(allPages, insertPage)
+		pageNumber++
+
+		// 处理该年月的条目
+		engine := NewContinuousLayoutEngine(entries)
+		pages, err := engine.ProcessEntries()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// 更新页码并添加年月信息
+		for i := range pages {
+			pages[i].Page = pageNumber
+			pages[i].YearMonth = yearMonth
+			pageNumber++
+		}
+
+		allPages = append(allPages, pages...)
 	}
 
-	// Format the response to match frontend expectations
-	formattedPages := make([]map[string]interface{}, len(pages))
-	for i, page := range pages {
-		// Create text areas and texts slices
-		textAreas := make([][][]float64, len(page.TextAreas))
-		texts := make([]string, len(page.TextAreas))
-		for j, area := range page.TextAreas {
-			textAreas[j] = [][]float64{
-				{area[0][0], area[0][1]},
-				{area[1][0], area[1][1]},
-			}
-			texts[j] = page.Texts[j]
-		}
-
-		// Create pictures slice
-		pictures := make([]map[string]interface{}, len(page.Pictures))
-		for j, pic := range page.Pictures {
-			pictures[j] = map[string]interface{}{
-				"url": pic.URL,
-				"area": [][]float64{
-					{pic.Area[0][0], pic.Area[0][1]},
-					{pic.Area[1][0], pic.Area[1][1]},
-				},
-			}
-		}
-
-		// Get the year and month from the page time
-		yearMonth := ""
-		if t, err := time.Parse("2006年1月2日 15:04", page.Time); err == nil {
-			yearMonth = fmt.Sprintf("%d.%02d", t.Year(), t.Month())
-		}
-
-		formattedPage := map[string]interface{}{
-			"time":        page.Time,
-			"time_area":   page.TimeArea,
-			"text_areas":  textAreas,
-			"texts":       texts,
-			"pictures":    pictures,
-			"year_month":  yearMonth,
-			"page_number": i + 1,
-		}
-
-		formattedPages[i] = formattedPage
-	}
-
-	// Return response
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"pages": formattedPages,
+		"pages": allPages,
 	})
 }

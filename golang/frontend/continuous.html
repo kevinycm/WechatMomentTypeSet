@@ -69,7 +69,7 @@
             font-size: 50px;
             color: #95a5a6;
             display: flex;
-            justify-content: space-between;
+            justify-content: center;
             align-items: center;
         }
         .page-number {
@@ -199,108 +199,69 @@
             element.style.height = `${Math.abs(end[1] - start[1])}px`;
         }
 
-        function createImageErrorHandler(url) {
+        function createImageErrorHandler(container, area) {
             return function() {
-                const placeholder = document.createElement('div');
-                placeholder.style.width = '100%';
-                placeholder.style.height = '100%';
-                placeholder.style.display = 'flex';
-                placeholder.style.flexDirection = 'column';
-                placeholder.style.justifyContent = 'center';
-                placeholder.style.alignItems = 'center';
-                placeholder.style.backgroundColor = '#f1f1f1';
-                placeholder.style.color = '#999';
-                placeholder.style.padding = '20px';
-                placeholder.style.textAlign = 'center';
-                placeholder.style.boxSizing = 'border-box';
-                
-                const errorIcon = document.createElement('div');
-                errorIcon.textContent = '❌';
-                errorIcon.style.fontSize = '50px';
-                errorIcon.style.marginBottom = '20px';
-                
-                const errorText = document.createElement('div');
-                errorText.textContent = '图片加载失败';
-                errorText.style.fontSize = '30px';
-                errorText.style.marginBottom = '10px';
-                
-                const urlText = document.createElement('div');
-                urlText.textContent = url;
-                urlText.style.fontSize = '20px';
-                urlText.style.wordBreak = 'break-all';
-                
-                placeholder.appendChild(errorIcon);
-                placeholder.appendChild(errorText);
-                placeholder.appendChild(urlText);
-                
-                this.parentNode.appendChild(placeholder);
-                this.remove();
+                container.style.display = 'flex';
+                container.style.justifyContent = 'center';
+                container.style.alignItems = 'center';
+                container.style.fontSize = '40px';
+                container.style.color = '#666';
+                container.innerHTML = '图片加载失败';
             };
         }
 
-        function createPage(pageData, pageNumber) {
+        function createPage(pageData) {
             const page = document.createElement('div');
             page.className = 'page';
-            
-            // Create time area
-            if (pageData.time) {
-                const timeDiv = document.createElement('div');
-                timeDiv.className = 'time-display';
-                
-                if (pageData.time_area) {
-                    setElementPosition(timeDiv, pageData.time_area);
-                } else {
-                    timeDiv.style.left = '150px';
-                    timeDiv.style.top = '150px';
+
+            // 处理每个条目
+            pageData.entries.forEach((entry, index) => {
+                // 添加时间区域
+                if (entry.time && entry.time_area) {
+                    const timeDiv = document.createElement('div');
+                    timeDiv.className = 'time-display';
+                    timeDiv.textContent = entry.time;
+                    setElementPosition(timeDiv, entry.time_area);
+                    page.appendChild(timeDiv);
                 }
-                
-                timeDiv.textContent = pageData.time;
-                page.appendChild(timeDiv);
-            }
-            
-            // Create text areas
-            if (pageData.text_areas && pageData.texts) {
-                pageData.text_areas.forEach((area, index) => {
-                    const textArea = document.createElement('div');
-                    textArea.className = 'text-area';
-                    setElementPosition(textArea, area);
-                    textArea.textContent = pageData.texts[index];
-                    page.appendChild(textArea);
-                });
-            }
-            
-            // Create picture areas
-            if (pageData.pictures) {
-                pageData.pictures.forEach(pic => {
-                    const pictureArea = document.createElement('div');
-                    pictureArea.className = 'picture-area';
-                    setElementPosition(pictureArea, pic.area);
-                    
-                    const img = document.createElement('img');
-                    img.src = pic.url;
-                    img.onerror = createImageErrorHandler(pic.url);
-                    
-                    pictureArea.appendChild(img);
-                    page.appendChild(pictureArea);
-                });
+
+                // 添加文本区域
+                if (entry.texts && entry.text_areas) {
+                    entry.texts.forEach((text, i) => {
+                        if (entry.text_areas[i]) {
+                            const textDiv = document.createElement('div');
+                            textDiv.className = 'text-area';
+                            textDiv.textContent = text;
+                            setElementPosition(textDiv, entry.text_areas[i]);
+                            page.appendChild(textDiv);
+                        }
+                    });
+                }
+
+                // 添加图片区域
+                if (entry.pictures) {
+                    entry.pictures.forEach((picture, i) => {
+                        const pictureDiv = document.createElement('div');
+                        pictureDiv.className = 'picture-area';
+                        setElementPosition(pictureDiv, picture.area);
+
+                        const img = document.createElement('img');
+                        img.src = picture.url;
+                        img.onerror = createImageErrorHandler(pictureDiv, picture.area);
+                        pictureDiv.appendChild(img);
+                        page.appendChild(pictureDiv);
+                    });
+                }
+            });
+
+            // 添加页码信息（非插页才显示页码）
+            if (!pageData.is_insert) {
+                const pageInfo = document.createElement('div');
+                pageInfo.className = 'page-info';
+                pageInfo.innerHTML = `<span class="page-number">${pageData.page}</span>`;
+                page.appendChild(pageInfo);
             }
 
-            // Add page info (year-month and page number)
-            const pageInfo = document.createElement('div');
-            pageInfo.className = 'page-info';
-            
-            const yearMonthElement = document.createElement('span');
-            yearMonthElement.className = 'year-month';
-            yearMonthElement.textContent = pageData.year_month || '';
-            
-            const pageNumberElement = document.createElement('span');
-            pageNumberElement.className = 'page-number';
-            pageNumberElement.textContent = `${pageNumber}`;
-            
-            pageInfo.appendChild(yearMonthElement);
-            pageInfo.appendChild(pageNumberElement);
-            page.appendChild(pageInfo);
-            
             return page;
         }
 
@@ -314,7 +275,7 @@
             }
             
             pages.forEach((pageData, index) => {
-                const page = createPage(pageData, index + 1);
+                const page = createPage(pageData);
                 container.appendChild(page);
             });
             
