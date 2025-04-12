@@ -15,7 +15,8 @@ func main() {
 	}
 
 	// Create and start server
-	server := backend.NewServer(8888, basePath)
+	dbDSN := ""
+	server := backend.NewServer(8888, basePath, dbDSN)
 	if err := server.Start(); err != nil {
 		log.Fatal("Error starting server:", err)
 	}

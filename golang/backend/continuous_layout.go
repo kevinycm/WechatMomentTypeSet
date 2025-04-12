@@ -65,62 +65,58 @@ func (e *ContinuousLayoutEngine) ProcessEntries() ([]Page, error) {
 }
 
 func (e *ContinuousLayoutEngine) processEntry(entry Entry) {
-	// 检查当前页面剩余空间
+	// 1.1) 检查时间区域是否可以在当前页面展示
 	availableHeight := e.availableHeight - (e.currentY - e.marginTop)
-
-	// 计算时间区域所需的最小高度
 	minTimeHeight := e.timeHeight
 	if e.currentY > e.marginTop {
 		minTimeHeight += e.entrySpacing
 	}
 
-	// 如果有图片，计算第一行图片需要的高度
-	var firstRowPicHeight float64
-	if len(entry.Pictures) > 0 {
-		firstRowPicHeight = e.calculateFirstRowPictureHeight(entry.Pictures)
-		if strings.TrimSpace(entry.Text) == "" {
-			// 如果没有文本，需要加上时间和图片之间的间距
-			firstRowPicHeight += e.elementSpacing
-		}
-	}
-
-	// 计算最小所需高度
-	minRequiredHeight := minTimeHeight
-	if len(entry.Pictures) > 0 && strings.TrimSpace(entry.Text) == "" {
-		// 如果只有时间和图片，需要确保能放下时间和至少第一行图片
-		minRequiredHeight += firstRowPicHeight
-	}
-
-	// 如果剩余空间不足以放下必需的内容，创建新页面
-	if availableHeight < minRequiredHeight {
+	// 如果时间区域无法展示，创建新页面
+	if availableHeight < minTimeHeight {
 		e.newPage()
 		availableHeight = e.availableHeight
 	}
 
-	// 添加时间区域
-	e.addTime(entry.Time)
+	// 1.2) 时间区域可以展示，需要判断文本或图片是否可以和时间一起展示
+	hasText := strings.TrimSpace(entry.Text) != ""
+	hasPictures := len(entry.Pictures) > 0
 
-	// 计算剩余空间
-	availableHeight = e.availableHeight - (e.currentY - e.marginTop)
-
-	// 如果有文本，检查是否需要新页面
-	if strings.TrimSpace(entry.Text) != "" {
-		// 如果剩余空间不足以放下至少一行文本，创建新页面
-		if availableHeight < e.lineHeight {
-			e.newPage()
-		}
-		e.processText(entry.Text)
+	// 计算至少一行文本需要的高度
+	minTextHeight := e.lineHeight + e.elementSpacing
+	// 计算至少一行图片需要的高度
+	var minPictureHeight float64
+	if hasPictures {
+		minPictureHeight = e.calculateFirstRowPictureHeight(entry.Pictures) + e.elementSpacing
 	}
 
-	// 如果有图片，检查是否需要新页面
-	if len(entry.Pictures) > 0 {
-		availableHeight = e.availableHeight - (e.currentY - e.marginTop)
+	// 检查是否可以和时间一起展示
+	canShowWithText := hasText && (availableHeight >= minTimeHeight+minTextHeight)
+	canShowWithPictures := hasPictures && (availableHeight >= minTimeHeight+minPictureHeight)
 
-		// 如果剩余空间不足以放下第一行图片，创建新页面
-		if availableHeight < firstRowPicHeight {
-			e.newPage()
+	// 1.2.1) 或 1.2.2) 如果可以和时间一起展示，则在当前页面展示
+	if canShowWithText || canShowWithPictures {
+		e.addTime(entry.Time)
+
+		if hasText {
+			e.processText(entry.Text)
 		}
-		e.processPictures(entry.Pictures)
+
+		if hasPictures {
+			e.processPictures(entry.Pictures)
+		}
+	} else {
+		// 1.2.3) 或 1.2.4) 如果不能一起展示，创建新页面
+		e.newPage()
+		e.addTime(entry.Time)
+
+		if hasText {
+			e.processText(entry.Text)
+		}
+
+		if hasPictures {
+			e.processPictures(entry.Pictures)
+		}
 	}
 }
 
