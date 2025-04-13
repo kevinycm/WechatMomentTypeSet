@@ -7,367 +7,226 @@
     <style>
         body {
             margin: 0;
-            padding: 20px;
+            padding: 0;
             background-color: #f0f0f0;
-            font-family: Arial, sans-serif;
-            overflow-x: hidden;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+        }
+        .pages-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+            padding: 20px;
         }
         .page-container {
+            width: 595px;  /* A4 width at 72DPI */
+            height: 842px;  /* A4 height at 72DPI */
+            background-color: white;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
             position: relative;
-            width: 744px; /* 2480 * 0.3 */
-            margin: 0 auto;
-            padding: 20px;
+            overflow: hidden;
         }
         .page {
-            width: 2480px;
-            height: 3508px;
-            background-color: white;
+            width: 100%;
+            height: 100%;
             position: relative;
-            box-shadow: 0 0 10px rgba(0,0,0,0.1);
-            transform: scale(0.3);
-            transform-origin: 0 0;
-            margin-bottom: -2455.6px; /* (3508 * 0.7) */
+            padding: 45px 34px;  /* A4 margins at 72DPI */
+            box-sizing: border-box;
+            background-color: white;
         }
-        .time-display {
-            position: absolute;
+        .entry {
+            margin-bottom: 20px;
+            position: relative;
+        }
+        .time {
+            font-size: 16px;
+            color: #666;
+            margin-bottom: 10px;
             display: flex;
             align-items: center;
-            font-weight: 500;
-            white-space: nowrap;
-            width: calc(100% - 320px); /* 减去左右两边的边距 */
             justify-content: space-between;
-            left: 160px; /* 设置左边距 */
-            right: 160px; /* 设置右边距 */
+            width: 100%;
+            height: 24px;  /* 固定高度确保对齐 */
+            line-height: 24px;  /* 行高与高度一致 */
         }
         .date-part {
             background-color: #e74c3c;
-            padding: 10px 30px;
-            border-radius: 10px;
             color: white;
-            font-size: 60px;
-            line-height: 1;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 14px;
+            line-height: 20px;  /* 调整行高以确保文字垂直居中 */
+            display: inline-block;
         }
         .time-part {
-            color: #2c3e50;
-            font-size: 60px;
-            line-height: 1;
+            color: #666;
+            font-size: 14px;
+            text-align: right;
+            line-height: 24px;  /* 与容器行高一致 */
         }
-        .text-area {
-            position: absolute;
-            font-size: 50px;
-            line-height: 75px;
-            color: #333;
+        .text {
+            font-size: 16px;
+            line-height: 24px;
+            margin-bottom: 10px;
             white-space: pre-wrap;
-            word-wrap: break-word;
         }
-        .picture-area {
-            position: absolute;
-            background-color: #f8f9fa;
-            border: 3px solid #ecf0f1;
-            box-sizing: border-box;
+        .pictures {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        .picture {
+            position: relative;
             overflow: hidden;
         }
-        .picture-area img {
+        .picture img {
             position: absolute;
-            top: 0;
-            left: 0;
             width: 100%;
             height: 100%;
             object-fit: cover;
-            display: block;
-        }
-        .page-info {
-            position: absolute;
-            bottom: 160px;
-            left: 160px;
-            right: 160px;
-            font-size: 50px;
-            color: #95a5a6;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-        }
-        .page-number {
-            color: inherit;
-        }
-        .year-month {
-            color: inherit;
         }
         .controls {
             position: fixed;
             top: 20px;
             right: 20px;
-            background-color: white;
-            padding: 20px;
-            border-radius: 5px;
-            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            display: flex;
+            gap: 10px;
             z-index: 1000;
         }
-        button {
-            padding: 10px 20px;
-            margin: 5px;
-            font-size: 16px;
+        .controls button {
+            padding: 8px 16px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
             cursor: pointer;
         }
-        .zoom-controls {
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            background-color: white;
-            padding: 10px;
-            border-radius: 5px;
-            box-shadow: 0 0 10px rgba(0,0,0,0.1);
-            z-index: 1000;
-        }
-        .zoom-controls button {
-            padding: 5px 10px;
-            margin: 0 5px;
-        }
-        .insert-page-content {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            text-align: center;
-            color: #2c3e50;
-        }
-        .insert-page-year-month {
-            font-size: 200px;
-            font-weight: bold;
-            margin: 0;
-            line-height: 1.2;
-        }
-        .page-info {
-            position: absolute;
-            bottom: 100px;
-            left: 0;
-            right: 0;
-            text-align: center;
-            font-size: 50px;
-            color: #95a5a6;
-        }
-        .page-number {
-            color: inherit;
+        .controls button:hover {
+            background-color: #45a049;
         }
     </style>
 </head>
 <body>
     <div class="controls">
-        <button onclick="clearPages()">Clear</button>
     </div>
-    <div class="zoom-controls">
-        <button onclick="zoomOut()">-</button>
-        <span id="zoom-level">30%</span>
-        <button onclick="zoomIn()">+</button>
-    </div>
-    <div id="page-container" class="page-container"></div>
+    <div id="pages-container" class="pages-container"></div>
 
     <script>
-        // 全局变量
-        let currentZoom = 0.3;
-        const A4_WIDTH = 2480;
-        const A4_HEIGHT = 3508;
-        
-        // 初始化
-        document.addEventListener('DOMContentLoaded', () => {
-            updateZoomDisplay();
-            loadData(); // 页面加载时直接获取数据
-        });
+        // 渲染单个页面
+        function renderPage(page) {
+            const pageContainer = document.createElement('div');
+            pageContainer.className = 'page-container';
 
-        // 加载数据
-        function loadData() {
-            fetch('/continuous-layout-real')
-                .then(response => {
-                    if (!response.ok) {
-                        throw new Error(`HTTP error! status: ${response.status}`);
-                    }
-                    return response.json();
-                })
-                .then(data => {
-                    console.log('Received data:', data);
-                    if (!data.pages || !Array.isArray(data.pages)) {
-                        throw new Error('Invalid data format: pages array is missing');
-                    }
-                    renderPages(data.pages);
-                })
-                .catch(error => {
-                    console.error('Error loading data:', error);
-                    alert('Error loading data: ' + error.message);
-                });
-        }
+            const pageDiv = document.createElement('div');
+            pageDiv.className = 'page';
 
-        // 缩放控制
-        function zoomIn() {
-            currentZoom = Math.min(currentZoom + 0.1, 1.0);
-            updateZoom();
-        }
-
-        function zoomOut() {
-            currentZoom = Math.max(currentZoom - 0.1, 0.1);
-            updateZoom();
-        }
-
-        function updateZoom() {
-            const container = document.getElementById('page-container');
-            const pages = container.querySelectorAll('.page');
-            
-            // 更新容器宽度
-            container.style.width = `${A4_WIDTH * currentZoom}px`;
-            
-            // 更新每个页面的缩放和间距
-            pages.forEach((page, index) => {
-                page.style.transform = `scale(${currentZoom})`;
-                page.style.marginBottom = `${-A4_HEIGHT * (1 - currentZoom)}px`;
-            });
-            
-            // 更新最后一页的margin-bottom
-            if (pages.length > 0) {
-                pages[pages.length - 1].style.marginBottom = '0';
-            }
-            
-            updateZoomDisplay();
-        }
-
-        function updateZoomDisplay() {
-            document.getElementById('zoom-level').textContent = `${Math.round(currentZoom * 100)}%`;
-        }
-
-        function setElementPosition(element, area) {
-            const [start, end] = area;
-            element.style.left = `${start[0]}px`;
-            element.style.top = `${start[1]}px`;
-            element.style.width = `${Math.abs(end[0] - start[0])}px`;
-            element.style.height = `${Math.abs(end[1] - start[1])}px`;
-        }
-
-        function createImageErrorHandler(container, area) {
-            return function() {
-                container.style.display = 'flex';
-                container.style.justifyContent = 'center';
-                container.style.alignItems = 'center';
-                container.style.fontSize = '40px';
-                container.style.color = '#666';
-                container.innerHTML = '图片加载失败';
-            };
-        }
-
-        function createTimeDisplay(entry, area) {
-            const timeDiv = document.createElement('div');
-            timeDiv.className = 'time-display';
-            
-            // 创建日期部分（月日和星期）
-            const datePart = document.createElement('div');
-            datePart.className = 'date-part';
-            datePart.textContent = entry.date_part;
-            
-            // 创建时间部分（时分）
-            const timePart = document.createElement('div');
-            timePart.className = 'time-part';
-            timePart.textContent = entry.time_part;
-            
-            // 添加到时间显示div
-            timeDiv.appendChild(datePart);
-            timeDiv.appendChild(timePart);
-            
-            // 设置位置
-            if (area && area.length >= 2) {
-                timeDiv.style.top = area[0][1] + 'px';
+            // 如果是插页，添加年月信息
+            if (page.is_insert) {
+                const yearMonthDiv = document.createElement('div');
+                yearMonthDiv.className = 'year-month';
+                yearMonthDiv.textContent = page.year_month;
+                yearMonthDiv.style.position = 'absolute';
+                yearMonthDiv.style.top = '50%';
+                yearMonthDiv.style.left = '50%';
+                yearMonthDiv.style.transform = 'translate(-50%, -50%)';
+                yearMonthDiv.style.fontSize = '24px';
+                yearMonthDiv.style.fontWeight = 'bold';
+                yearMonthDiv.style.textAlign = 'center';
+                pageDiv.appendChild(yearMonthDiv);
             } else {
-                timeDiv.style.top = '100px';
-            }
-            
-            return timeDiv;
-        }
-
-        function createPage(pageData) {
-            const page = document.createElement('div');
-            page.className = 'page';
-
-            if (pageData.is_insert) {
-                // 创建插页内容
-                const insertContent = document.createElement('div');
-                insertContent.className = 'insert-page-content';
-                
-                const yearMonth = document.createElement('div');
-                yearMonth.className = 'insert-page-year-month';
-                yearMonth.textContent = pageData.year_month;
-                
-                insertContent.appendChild(yearMonth);
-                page.appendChild(insertContent);
-                return page;
+                // 非插页显示页码
+                const pageNumber = document.createElement('div');
+                pageNumber.className = 'page-number';
+                pageNumber.textContent = page.page;
+                pageNumber.style.position = 'absolute';
+                pageNumber.style.bottom = '20px';
+                pageNumber.style.left = '50%';
+                pageNumber.style.transform = 'translateX(-50%)';
+                pageDiv.appendChild(pageNumber);
             }
 
             // 处理每个条目
-            pageData.entries.forEach((entry, index) => {
-                // 添加时间区域
-                if (entry.time && entry.time_area) {
-                    const timeDiv = createTimeDisplay(entry, entry.time_area);
-                    page.appendChild(timeDiv);
+            page.entries.forEach(entry => {
+                // 处理时间区域
+                if (entry.time_area) {
+                    const timeDiv = document.createElement('div');
+                    timeDiv.className = 'time';
+                    timeDiv.style.position = 'absolute';
+                    timeDiv.style.top = entry.time_area[0][1] + 'px';
+                    timeDiv.style.left = entry.time_area[0][0] + 'px';
+                    timeDiv.style.width = (entry.time_area[1][0] - entry.time_area[0][0]) + 'px';
+                    timeDiv.style.height = (entry.time_area[1][1] - entry.time_area[0][1]) + 'px';
+
+                    // 添加日期部分（左侧带红色背景）
+                    const datePart = document.createElement('span');
+                    datePart.className = 'date-part';
+                    datePart.textContent = entry.date_part;
+                    timeDiv.appendChild(datePart);
+
+                    // 添加时间部分（右侧）
+                    const timePart = document.createElement('span');
+                    timePart.className = 'time-part';
+                    timePart.textContent = entry.time_part;
+                    timeDiv.appendChild(timePart);
+
+                    pageDiv.appendChild(timeDiv);
                 }
 
-                // 添加文本区域
-                if (entry.texts && entry.text_areas) {
-                    entry.texts.forEach((text, i) => {
-                        if (entry.text_areas[i]) {
-                            const textDiv = document.createElement('div');
-                            textDiv.className = 'text-area';
-                            textDiv.textContent = text;
-                            setElementPosition(textDiv, entry.text_areas[i]);
-                            page.appendChild(textDiv);
-                        }
-                    });
-                }
+                // 处理文本区域
+                entry.text_areas.forEach((area, index) => {
+                    const textDiv = document.createElement('div');
+                    textDiv.className = 'text';
+                    textDiv.textContent = entry.texts[index];
+                    textDiv.style.position = 'absolute';
+                    textDiv.style.top = area[0][1] + 'px';
+                    textDiv.style.left = area[0][0] + 'px';
+                    textDiv.style.width = (area[1][0] - area[0][0]) + 'px';
+                    textDiv.style.height = (area[1][1] - area[0][1]) + 'px';
+                    textDiv.style.fontSize = '16px';
+                    textDiv.style.lineHeight = '24px';
+                    pageDiv.appendChild(textDiv);
+                });
 
-                // 添加图片区域
-                if (entry.pictures) {
-                    entry.pictures.forEach((picture, i) => {
-                        const pictureDiv = document.createElement('div');
-                        pictureDiv.className = 'picture-area';
-                        setElementPosition(pictureDiv, picture.area);
-
-                        const img = document.createElement('img');
-                        img.src = picture.url;
-                        img.onerror = createImageErrorHandler(pictureDiv, picture.area);
-                        pictureDiv.appendChild(img);
-                        page.appendChild(pictureDiv);
-                    });
-                }
+                // 处理图片
+                entry.pictures.forEach(pic => {
+                    const img = document.createElement('img');
+                    img.src = pic.url;
+                    img.style.position = 'absolute';
+                    img.style.top = pic.area[0][1] + 'px';
+                    img.style.left = pic.area[0][0] + 'px';
+                    img.style.width = (pic.area[1][0] - pic.area[0][0]) + 'px';
+                    img.style.height = (pic.area[1][1] - pic.area[0][1]) + 'px';
+                    pageDiv.appendChild(img);
+                });
             });
 
-            // 添加页码信息（非插页才显示页码）
-            if (!pageData.is_insert) {
-                const pageInfo = document.createElement('div');
-                pageInfo.className = 'page-info';
-                pageInfo.innerHTML = `<span class="page-number">${pageData.page}</span>`;
-                page.appendChild(pageInfo);
-            }
-
-            return page;
+            pageContainer.appendChild(pageDiv);
+            return pageContainer;
         }
 
-        function renderPages(pages) {
-            const container = document.getElementById('page-container');
-            container.innerHTML = '';
+        // 初始化
+        document.addEventListener('DOMContentLoaded', () => {
+            // 获取页面容器
+            const container = document.getElementById('pages-container');
             
-            if (!pages || pages.length === 0) {
-                console.error('No pages to render');
-                return;
-            }
-            
-            pages.forEach((pageData, index) => {
-                const page = createPage(pageData);
-                container.appendChild(page);
-            });
-            
-            // 渲染完成后调整视图
-            setTimeout(() => {
-                updateZoom();
-            }, 50);
-        }
-
-        function clearPages() {
-            document.getElementById('page-container').innerHTML = '';
-        }
+            // 获取数据
+            fetch('/continuous-layout-real')
+                .then(response => response.json())
+                .then(data => {
+                    // 渲染每个页面
+                    data.pages.forEach(page => {
+                        const pageElement = renderPage(page);
+                        container.appendChild(pageElement);
+                    });
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                });
+        });
     </script>
 </body>
 </html> 

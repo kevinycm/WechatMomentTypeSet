@@ -225,8 +225,6 @@ func (s *Server) handleContinuousLayoutReal(w http.ResponseWriter, r *http.Reque
 		}
 
 		// 添加插页
-		// 使用当前年月组的时间来格式化年月
-		// 从yearMonthKey中提取年月信息
 		parts := strings.Split(yearMonthKey, "-")
 		if len(parts) != 2 {
 			continue
@@ -262,8 +260,57 @@ func (s *Server) handleContinuousLayoutReal(w http.ResponseWriter, r *http.Reque
 		allPages = append(allPages, pages...)
 	}
 
+	// 将所有页面的坐标转换为72DPI
+	for i := range allPages {
+		allPages[i] = convertPageTo72DPI(allPages[i])
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"pages": allPages,
 	})
+}
+
+// convertTo72DPI converts coordinates from 300DPI to 72DPI
+func convertTo72DPI(value float64) float64 {
+	return value * 72 / 300
+}
+
+// convertAreaTo72DPI converts an area's coordinates from 300DPI to 72DPI
+func convertAreaTo72DPI(area [][]float64) [][]float64 {
+	if len(area) != 2 || len(area[0]) != 2 || len(area[1]) != 2 {
+		return area
+	}
+	return [][]float64{
+		{convertTo72DPI(area[0][0]), convertTo72DPI(area[0][1])},
+		{convertTo72DPI(area[1][0]), convertTo72DPI(area[1][1])},
+	}
+}
+
+// convertPageTo72DPI converts all coordinates in a page from 300DPI to 72DPI
+func convertPageTo72DPI(page ContinuousLayoutPage) ContinuousLayoutPage {
+	// 不要转换页码，保持原样
+	// page.Page = int(convertTo72DPI(float64(page.Page)))
+
+	// Convert each entry
+	for i := range page.Entries {
+		entry := &page.Entries[i]
+
+		// Convert time area
+		if entry.TimeArea != nil {
+			entry.TimeArea = convertAreaTo72DPI(entry.TimeArea)
+		}
+
+		// Convert text areas
+		for j := range entry.TextAreas {
+			entry.TextAreas[j] = convertAreaTo72DPI(entry.TextAreas[j])
+		}
+
+		// Convert pictures
+		for j := range entry.Pictures {
+			entry.Pictures[j].Area = convertAreaTo72DPI(entry.Pictures[j].Area)
+		}
+	}
+
+	return page
 }

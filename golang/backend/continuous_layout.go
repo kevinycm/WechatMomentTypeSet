@@ -50,29 +50,39 @@ type ContinuousLayoutEngine struct {
 	singleImageWidth  float64 // 单张横图的默认宽度
 	minImageHeight    float64 // 单张竖图的最小展示高度
 	minImageWidth     float64 // 单张横图的最小展示宽度
+	currentYearMonth  string
 }
 
 // NewContinuousLayoutEngine creates a new continuous layout engine
 func NewContinuousLayoutEngine(entries []Entry) *ContinuousLayoutEngine {
 	engine := &ContinuousLayoutEngine{
 		entries:           entries,
-		marginLeft:        160,
-		marginRight:       160,
-		marginTop:         160,
-		marginBottom:      160,
-		timeHeight:        104,
-		fontSize:          50,
-		lineHeight:        75,
-		entrySpacing:      150,  // 条目之间的间距
-		elementSpacing:    30,   // 元素整体之间的间距
-		imageSpacing:      10,   // 图片之间的间距
-		singleImageHeight: 2260, // 设置单张竖图的默认高度
-		singleImageWidth:  1695, // 设置单张横图的默认宽度
-		minImageHeight:    800,  // 设置单张竖图的最小展示高度
-		minImageWidth:     1200, // 设置单张横图的最小展示宽度
+		marginLeft:        142,
+		marginRight:       142,
+		marginTop:         189,
+		marginBottom:      189,
+		timeHeight:        100,
+		fontSize:          66.67, // 对应72DPI的16px
+		lineHeight:        100,   // 对应72DPI的24px
+		entrySpacing:      150,   // 条目之间的间距
+		elementSpacing:    30,    // 元素整体之间的间距
+		imageSpacing:      10,    // 图片之间的间距
+		singleImageHeight: 2260,  // 设置单张竖图的默认高度
+		singleImageWidth:  1695,  // 设置单张横图的默认宽度
+		minImageHeight:    800,   // 设置单张竖图的最小展示高度
+		minImageWidth:     1200,  // 设置单张横图的最小展示宽度
 	}
 	engine.availableWidth = 2480 - engine.marginLeft - engine.marginRight
 	engine.availableHeight = 3508 - engine.marginTop - engine.marginBottom
+
+	// 从第一个条目中获取年月信息
+	if len(entries) > 0 {
+		t, err := time.Parse("2006-01-02 15:04:05", entries[0].Time)
+		if err == nil {
+			engine.currentYearMonth = fmt.Sprintf("%d年%d月", t.Year(), t.Month())
+		}
+	}
+
 	return engine
 }
 
@@ -154,7 +164,7 @@ func (e *ContinuousLayoutEngine) calculateEntryTotalHeight(entry Entry) float64 
 			}
 		} else {
 			// 多张图片
-			layout := e.getLayout(len(entry.Pictures))
+			layout := getLayout(len(entry.Pictures))
 			currentIndex := 0
 			for _, rowCount := range layout {
 				// 计算这一行的高度
@@ -268,7 +278,7 @@ func (e *ContinuousLayoutEngine) calculateFirstRowPictureHeight(pictures []Pictu
 	}
 
 	// 获取第一行图片数量
-	layout := e.getLayout(len(pictures))
+	layout := getLayout(len(pictures))
 	firstRowCount := layout[0]
 
 	if firstRowCount == 1 {
@@ -499,30 +509,41 @@ func (e *ContinuousLayoutEngine) processPictures(pictures []Picture) {
 		return
 	}
 
-	// 单张图片的特殊处理
-	if len(pictures) == 1 {
+	// 根据图片数量调用对应的处理方法
+	switch len(pictures) {
+	case 1:
 		e.processSinglePicture(pictures[0])
-		return
-	}
-
-	// 多张图片的处理保持不变
-	layout := e.getLayout(len(pictures))
-	currentIdx := 0
-	for _, row := range layout {
-		endIdx := currentIdx + row
-		if endIdx > len(pictures) {
-			endIdx = len(pictures)
-		}
-		rowPics := pictures[currentIdx:endIdx]
-		e.processPictureRow(rowPics)
-		currentIdx += row
+	case 2:
+		e.processTwoPictures(pictures)
+	case 3:
+		e.processThreePictures(pictures)
+	case 4:
+		e.processFourPictures(pictures)
+	case 5:
+		e.processFivePictures(pictures)
+	case 6:
+		e.processSixPictures(pictures)
+	case 7:
+		e.processSevenPictures(pictures)
+	case 8:
+		e.processEightPictures(pictures)
+	case 9:
+		e.processNinePictures(pictures)
+	default:
+		// 如果超过9张图片，只处理前9张
+		e.processNinePictures(pictures[:9])
 	}
 }
 
-func (e *ContinuousLayoutEngine) processSinglePicture(pic Picture) {
-	// 检查是否有条目，如果没有则创建一个空条目
-	if len(e.currentPage.Entries) == 0 {
+// processSinglePicture 处理单张图片的布局
+func (e *ContinuousLayoutEngine) processSinglePicture(picture Picture) {
+	// 确保当前页面存在
+	if e.currentPage == nil {
 		e.newPage()
+	}
+
+	// 确保当前页面有至少一个条目
+	if len(e.currentPage.Entries) == 0 {
 		entry := PageEntry{
 			TextAreas: make([][][]float64, 0),
 			Texts:     make([]string, 0),
@@ -531,87 +552,76 @@ func (e *ContinuousLayoutEngine) processSinglePicture(pic Picture) {
 		e.currentPage.Entries = append(e.currentPage.Entries, entry)
 	}
 
-	// 检查当前页面剩余空间（不包含底部边距）
+	// 计算当前页面剩余空间（不包含底部边距）
 	availableHeight := e.availableHeight - (e.currentY - e.marginTop)
 
-	// 计算图片的宽高比
-	aspectRatio := float64(pic.Width) / float64(pic.Height)
+	// 计算图片布局
+	width, height, needNewPage := calculateSinglePictureLayout(
+		e.availableWidth,
+		availableHeight,
+		float64(picture.Width),
+		float64(picture.Height),
+	)
 
-	var actualWidth, actualHeight float64
-
-	if aspectRatio > 1 {
-		// 横图：基于默认宽度计算
-		actualWidth = math.Min(e.singleImageWidth, e.availableWidth)
-		actualHeight = actualWidth / aspectRatio
-
-		// 如果计算出的宽度小于最小展示宽度或高度超过可用空间，创建新页面
-		if actualWidth < e.minImageWidth || actualHeight > availableHeight {
-			e.newPage()
-			// 创建新的条目
+	// 判断是否需要新页面：
+	// 1. 布局计算指示需要新页面
+	// 2. 当前页空间不足以展示图片
+	// 3. 剩余空间小于最小展示高度要求
+	if needNewPage || availableHeight < height || availableHeight < e.minImageHeight {
+		e.newPage()
+		// 确保新页面有至少一个条目
+		if len(e.currentPage.Entries) == 0 {
 			entry := PageEntry{
 				TextAreas: make([][][]float64, 0),
 				Texts:     make([]string, 0),
 				Pictures:  make([]Picture, 0),
 			}
 			e.currentPage.Entries = append(e.currentPage.Entries, entry)
-			actualWidth = math.Min(e.singleImageWidth, e.availableWidth)
-			actualHeight = actualWidth / aspectRatio
 		}
-	} else {
-		// 竖图：基于默认高度计算
-		actualHeight = math.Min(e.singleImageHeight, availableHeight)
-		actualWidth = actualHeight * aspectRatio
-
-		// 如果计算出的高度小于最小展示高度，创建新页面
-		if actualHeight < e.minImageHeight {
-			e.newPage()
-			// 创建新的条目
-			entry := PageEntry{
-				TextAreas: make([][][]float64, 0),
-				Texts:     make([]string, 0),
-				Pictures:  make([]Picture, 0),
-			}
-			e.currentPage.Entries = append(e.currentPage.Entries, entry)
-			actualHeight = math.Min(e.singleImageHeight, e.availableHeight)
-			actualWidth = actualHeight * aspectRatio
-		}
+		// 在新页重新计算布局，使用完整页面高度
+		width, height, _ = calculateSinglePictureLayout(
+			e.availableWidth,
+			e.availableHeight,
+			float64(picture.Width),
+			float64(picture.Height),
+		)
 	}
 
-	// 确保宽度不超过可用宽度
-	if actualWidth > e.availableWidth {
-		actualWidth = e.availableWidth
-		actualHeight = actualWidth / aspectRatio
-	}
-
-	// 计算水平居中的起始x坐标
-	x := e.marginLeft + (e.availableWidth-actualWidth)/2
-
-	// 创建图片区域
-	area := [][]float64{
-		{x, e.currentY},
-		{x + actualWidth, e.currentY + actualHeight},
-	}
+	// 计算水平位置（居中）
+	x := calculateSinglePicturePosition(e.availableWidth, availableHeight, width, height)
 
 	// 获取当前页面的最后一个条目
 	currentEntry := &e.currentPage.Entries[len(e.currentPage.Entries)-1]
+
+	// 创建图片区域
+	area := [][]float64{
+		{e.marginLeft + x, e.currentY},
+		{e.marginLeft + x + width, e.currentY + height},
+	}
+
+	// 添加图片到当前条目
 	currentEntry.Pictures = append(currentEntry.Pictures, Picture{
-		Index: pic.Index,
+		Index: picture.Index,
 		Area:  area,
-		URL:   pic.URL,
+		URL:   picture.URL,
 	})
 
 	// 更新当前Y坐标
-	e.currentY += actualHeight + e.elementSpacing
+	e.currentY += height + e.elementSpacing
 }
 
-func (e *ContinuousLayoutEngine) processPictureRow(rowPics []Picture) {
-	if len(rowPics) == 0 {
+func (e *ContinuousLayoutEngine) processPictureRow(pictures []Picture) {
+	if len(pictures) == 0 {
 		return
 	}
 
-	// 检查是否有条目，如果没有则创建一个空条目
+	// 确保当前页面存在
+	if e.currentPage == nil {
+		e.newPage()
+	}
+
+	// 确保当前页面有至少一个条目
 	if len(e.currentPage.Entries) == 0 {
-		e.newPage()
 		entry := PageEntry{
 			TextAreas: make([][][]float64, 0),
 			Texts:     make([]string, 0),
@@ -620,61 +630,148 @@ func (e *ContinuousLayoutEngine) processPictureRow(rowPics []Picture) {
 		e.currentPage.Entries = append(e.currentPage.Entries, entry)
 	}
 
-	// 计算这一行的理想高度和宽度
-	totalWidth := e.availableWidth
-	spacing := e.imageSpacing * float64(len(rowPics)-1)
-	availableWidth := totalWidth - spacing
-	width := availableWidth / float64(len(rowPics))
-	aspectRatio := float64(rowPics[0].Width) / float64(rowPics[0].Height)
-	height := width / aspectRatio
-
-	// 检查当前页面剩余空间
+	// 计算当前页面剩余空间（不包含底部边距）
 	availableHeight := e.availableHeight - (e.currentY - e.marginTop)
-	if availableHeight < height {
+
+	// 计算图片的布局
+	widths, heights, needNewPage := calculatePictureRowLayout(
+		e.availableWidth,
+		availableHeight,
+		pictures,
+		e.imageSpacing,
+	)
+
+	// 如果需要新开一页，则创建新页面
+	if needNewPage {
 		e.newPage()
-		// 创建新的条目
-		entry := PageEntry{
-			TextAreas: make([][][]float64, 0),
-			Texts:     make([]string, 0),
-			Pictures:  make([]Picture, 0),
+		// 确保新页面有至少一个条目
+		if len(e.currentPage.Entries) == 0 {
+			entry := PageEntry{
+				TextAreas: make([][][]float64, 0),
+				Texts:     make([]string, 0),
+				Pictures:  make([]Picture, 0),
+			}
+			e.currentPage.Entries = append(e.currentPage.Entries, entry)
 		}
-		e.currentPage.Entries = append(e.currentPage.Entries, entry)
+		// 重新计算布局
+		widths, heights, _ = calculatePictureRowLayout(
+			e.availableWidth,
+			e.availableHeight,
+			pictures,
+			e.imageSpacing,
+		)
 	}
 
-	// 布局这一行的图片
-	startY := e.currentY
-	x := e.marginLeft
-	for _, pic := range rowPics {
+	// 计算图片位置
+	positions := calculatePictureRowPosition(
+		e.availableWidth,
+		availableHeight,
+		widths,
+		heights,
+		e.imageSpacing,
+	)
+
+	// 获取当前页面的最后一个条目
+	currentEntry := &e.currentPage.Entries[len(e.currentPage.Entries)-1]
+
+	// 创建图片区域
+	for i, pic := range pictures {
 		area := [][]float64{
-			{x, startY},
-			{x + width, startY + height},
+			{e.marginLeft + positions[i][0], e.currentY + positions[i][1]},
+			{e.marginLeft + positions[i][0] + widths[i], e.currentY + positions[i][1] + heights[i]},
 		}
-		e.currentPage.Entries[len(e.currentPage.Entries)-1].Pictures = append(e.currentPage.Entries[len(e.currentPage.Entries)-1].Pictures, Picture{
+		currentEntry.Pictures = append(currentEntry.Pictures, Picture{
 			Index: pic.Index,
 			Area:  area,
 			URL:   pic.URL,
 		})
-		x += width + e.imageSpacing
 	}
 
-	// 更新当前Y坐标，如果不是最后一行，添加行间距
-	e.currentY = startY + height
-	if len(rowPics) > 0 {
-		e.currentY += e.imageSpacing
+	// 更新当前Y坐标
+	maxHeight := 0.0
+	for _, height := range heights {
+		if height > maxHeight {
+			maxHeight = height
+		}
 	}
+	e.currentY += maxHeight + e.elementSpacing
 }
 
-func (e *ContinuousLayoutEngine) getLayout(n int) []int {
-	layoutRules := map[int][]int{
-		1: {1},
-		2: {2},
-		3: {3},
-		4: {2, 2},
-		5: {2, 3},
-		6: {3, 3},
-		7: {2, 2, 3},
-		8: {3, 3, 2},
-		9: {3, 3, 3},
+// processTwoPictures 处理两张图片
+func (e *ContinuousLayoutEngine) processTwoPictures(pictures []Picture) {
+	if len(pictures) != 2 {
+		return
 	}
-	return layoutRules[n]
+	e.processPictureRow(pictures)
+}
+
+// processThreePictures 处理三张图片
+func (e *ContinuousLayoutEngine) processThreePictures(pictures []Picture) {
+	if len(pictures) != 3 {
+		return
+	}
+	e.processPictureRow(pictures)
+}
+
+// processFourPictures 处理四张图片
+func (e *ContinuousLayoutEngine) processFourPictures(pictures []Picture) {
+	if len(pictures) != 4 {
+		return
+	}
+	// 四张图片分成两行，每行两张
+	e.processPictureRow(pictures[:2])
+	e.processPictureRow(pictures[2:])
+}
+
+// processFivePictures 处理五张图片
+func (e *ContinuousLayoutEngine) processFivePictures(pictures []Picture) {
+	if len(pictures) != 5 {
+		return
+	}
+	// 五张图片分成两行，第一行两张，第二行三张
+	e.processPictureRow(pictures[:2])
+	e.processPictureRow(pictures[2:])
+}
+
+// processSixPictures 处理六张图片
+func (e *ContinuousLayoutEngine) processSixPictures(pictures []Picture) {
+	if len(pictures) != 6 {
+		return
+	}
+	// 六张图片分成两行，每行三张
+	e.processPictureRow(pictures[:3])
+	e.processPictureRow(pictures[3:])
+}
+
+// processSevenPictures 处理七张图片
+func (e *ContinuousLayoutEngine) processSevenPictures(pictures []Picture) {
+	if len(pictures) != 7 {
+		return
+	}
+	// 七张图片分成三行，第一行两张，第二行两张，第三行三张
+	e.processPictureRow(pictures[:2])
+	e.processPictureRow(pictures[2:4])
+	e.processPictureRow(pictures[4:])
+}
+
+// processEightPictures 处理八张图片
+func (e *ContinuousLayoutEngine) processEightPictures(pictures []Picture) {
+	if len(pictures) != 8 {
+		return
+	}
+	// 八张图片分成三行，第一行三张，第二行三张，第三行两张
+	e.processPictureRow(pictures[:3])
+	e.processPictureRow(pictures[3:6])
+	e.processPictureRow(pictures[6:])
+}
+
+// processNinePictures 处理九张图片
+func (e *ContinuousLayoutEngine) processNinePictures(pictures []Picture) {
+	if len(pictures) != 9 {
+		return
+	}
+	// 九张图片分成三行，每行三张
+	e.processPictureRow(pictures[:3])
+	e.processPictureRow(pictures[3:6])
+	e.processPictureRow(pictures[6:])
 }
