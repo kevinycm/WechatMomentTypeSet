@@ -67,7 +67,7 @@ func NewContinuousLayoutEngine(entries []Entry) *ContinuousLayoutEngine {
 		entrySpacing:      150,   // 条目之间的间距
 		elementSpacing:    30,    // 元素整体之间的间距
 		imageSpacing:      10,    // 图片之间的间距
-		singleImageHeight: 2260,  // 设置单张竖图的默认高度
+		singleImageHeight: 2808,  // 设置单张竖图的默认高度
 		singleImageWidth:  1695,  // 设置单张横图的默认宽度
 		minImageHeight:    800,   // 设置单张竖图的最小展示高度
 		minImageWidth:     1200,  // 设置单张横图的最小展示宽度
@@ -653,13 +653,50 @@ func (e *ContinuousLayoutEngine) processPictureRow(pictures []Picture) {
 			}
 			e.currentPage.Entries = append(e.currentPage.Entries, entry)
 		}
-		// 重新计算布局
+		// 重新计算布局，使用完整页面高度
+		availableHeight = e.availableHeight
 		widths, heights, _ = calculatePictureRowLayout(
 			e.availableWidth,
-			e.availableHeight,
+			availableHeight,
 			pictures,
 			e.imageSpacing,
 		)
+
+		// 尝试按可用高度放大图片
+		maxCurrentHeight := 0.0
+		for _, h := range heights {
+			if h > maxCurrentHeight {
+				maxCurrentHeight = h
+			}
+		}
+
+		// 计算目标高度（考虑最大高度限制）
+		targetHeight := math.Min(availableHeight, e.singleImageHeight)
+		// 直接尝试放大到目标高度
+		if maxCurrentHeight < targetHeight {
+			scale := targetHeight / maxCurrentHeight
+			// 检查放大后是否会超出宽度限制
+			totalWidth := 0.0
+			for _, w := range widths {
+				totalWidth += w
+			}
+			totalWidth += e.imageSpacing * float64(len(widths)-1)
+
+			if totalWidth*scale <= e.availableWidth {
+				// 可以安全放大到目标高度
+				for i := range widths {
+					widths[i] *= scale
+					heights[i] *= scale
+				}
+			} else {
+				// 如果按高度放大会超出宽度，则按宽度计算最大可能的放大比例
+				maxScale := e.availableWidth / totalWidth
+				for i := range widths {
+					widths[i] *= maxScale
+					heights[i] *= maxScale
+				}
+			}
+		}
 	}
 
 	// 计算图片位置
@@ -697,12 +734,193 @@ func (e *ContinuousLayoutEngine) processPictureRow(pictures []Picture) {
 	e.currentY += maxHeight + e.elementSpacing
 }
 
-// processTwoPictures 处理两张图片
+// processTwoPictures 处理两张图片的布局
 func (e *ContinuousLayoutEngine) processTwoPictures(pictures []Picture) {
 	if len(pictures) != 2 {
 		return
 	}
-	e.processPictureRow(pictures)
+
+	// 确保当前页面存在
+	if e.currentPage == nil {
+		e.newPage()
+	}
+
+	// 确保当前页面有至少一个条目
+	if len(e.currentPage.Entries) == 0 {
+		entry := PageEntry{
+			TextAreas: make([][][]float64, 0),
+			Texts:     make([]string, 0),
+			Pictures:  make([]Picture, 0),
+		}
+		e.currentPage.Entries = append(e.currentPage.Entries, entry)
+	}
+
+	// 计算当前页面剩余空间
+	availableHeight := e.availableHeight - (e.currentY - e.marginTop)
+
+	// 计算两张图片的宽高比
+	aspectRatio1 := float64(pictures[0].Width) / float64(pictures[0].Height)
+	aspectRatio2 := float64(pictures[1].Width) / float64(pictures[1].Height)
+
+	// 判断是否都是横图
+	isAllLandscape := aspectRatio1 > 1 && aspectRatio2 > 1
+	// 判断是否都是竖图
+	isAllPortrait := aspectRatio1 <= 1 && aspectRatio2 <= 1
+	// 判断是否是超宽横图
+	isExtraWide := isAllLandscape && (aspectRatio1 > 2 || aspectRatio2 > 2)
+
+	var widths, heights []float64
+	var needNewPage bool
+
+	if isExtraWide {
+		// 超宽横图采用两行布局
+		widths = make([]float64, 2)
+		heights = make([]float64, 2)
+
+		// 第一张图片
+		widths[0] = e.availableWidth
+		heights[0] = widths[0] / aspectRatio1
+
+		// 第二张图片
+		widths[1] = e.availableWidth
+		heights[1] = widths[1] / aspectRatio2
+
+		// 判断是否需要新页面
+		totalHeight := heights[0] + heights[1] + e.imageSpacing
+		needNewPage = totalHeight > availableHeight || availableHeight < e.minImageHeight
+	} else {
+		// 单行布局
+		spacing := e.imageSpacing
+		totalWidth := e.availableWidth - spacing
+
+		if isAllPortrait {
+			// 两张都是竖图，按高度优先计算
+			targetHeight := math.Min(availableHeight, e.singleImageHeight)
+			widths = make([]float64, 2)
+			heights = make([]float64, 2)
+
+			// 根据高度计算宽度
+			widths[0] = targetHeight * aspectRatio1
+			widths[1] = targetHeight * aspectRatio2
+
+			// 如果总宽度超过可用宽度，按宽度重新计算
+			if widths[0]+widths[1]+spacing > totalWidth {
+				scale := totalWidth / (widths[0] + widths[1] + spacing)
+				widths[0] *= scale
+				widths[1] *= scale
+				targetHeight *= scale
+			}
+
+			heights[0] = targetHeight
+			heights[1] = targetHeight
+		} else {
+			// 混合布局或都是横图，按宽度分配
+			widths = make([]float64, 2)
+			heights = make([]float64, 2)
+
+			// 按比例分配宽度
+			totalRatio := aspectRatio1 + aspectRatio2
+			widths[0] = totalWidth * (aspectRatio1 / totalRatio)
+			widths[1] = totalWidth * (aspectRatio2 / totalRatio)
+
+			// 计算对应高度
+			heights[0] = widths[0] / aspectRatio1
+			heights[1] = widths[1] / aspectRatio2
+		}
+
+		// 获取最大高度
+		maxHeight := math.Max(heights[0], heights[1])
+		needNewPage = maxHeight > availableHeight || availableHeight < e.minImageHeight
+	}
+
+	// 如果需要新页面，重新计算布局
+	if needNewPage {
+		e.newPage()
+		// 确保新页面有至少一个条目
+		if len(e.currentPage.Entries) == 0 {
+			entry := PageEntry{
+				TextAreas: make([][][]float64, 0),
+				Texts:     make([]string, 0),
+				Pictures:  make([]Picture, 0),
+			}
+			e.currentPage.Entries = append(e.currentPage.Entries, entry)
+		}
+		// 使用完整页面高度重新计算
+		availableHeight = e.availableHeight
+
+		if isExtraWide {
+			// 重新计算超宽横图的两行布局
+			widths[0] = e.availableWidth
+			heights[0] = widths[0] / aspectRatio1
+			widths[1] = e.availableWidth
+			heights[1] = widths[1] / aspectRatio2
+		} else {
+			// 重新计算单行布局
+			if isAllPortrait {
+				targetHeight := math.Min(availableHeight, e.singleImageHeight)
+				widths[0] = targetHeight * aspectRatio1
+				widths[1] = targetHeight * aspectRatio2
+				if widths[0]+widths[1]+e.imageSpacing > e.availableWidth {
+					scale := e.availableWidth / (widths[0] + widths[1] + e.imageSpacing)
+					widths[0] *= scale
+					widths[1] *= scale
+					targetHeight *= scale
+				}
+				heights[0] = targetHeight
+				heights[1] = targetHeight
+			}
+		}
+	}
+
+	// 获取当前页面的最后一个条目
+	currentEntry := &e.currentPage.Entries[len(e.currentPage.Entries)-1]
+
+	if isExtraWide {
+		// 两行布局的图片位置计算
+		for i := 0; i < 2; i++ {
+			x := (e.availableWidth - widths[i]) / 2
+			area := [][]float64{
+				{e.marginLeft + x, e.currentY},
+				{e.marginLeft + x + widths[i], e.currentY + heights[i]},
+			}
+			currentEntry.Pictures = append(currentEntry.Pictures, Picture{
+				Index: pictures[i].Index,
+				Area:  area,
+				URL:   pictures[i].URL,
+			})
+			e.currentY += heights[i] + e.imageSpacing
+		}
+	} else {
+		// 单行布局的图片位置计算
+		totalWidth := widths[0] + widths[1] + e.imageSpacing
+		startX := (e.availableWidth - totalWidth) / 2
+		maxHeight := math.Max(heights[0], heights[1])
+
+		// 第一张图片
+		area1 := [][]float64{
+			{e.marginLeft + startX, e.currentY},
+			{e.marginLeft + startX + widths[0], e.currentY + heights[0]},
+		}
+		currentEntry.Pictures = append(currentEntry.Pictures, Picture{
+			Index: pictures[0].Index,
+			Area:  area1,
+			URL:   pictures[0].URL,
+		})
+
+		// 第二张图片
+		startX += widths[0] + e.imageSpacing
+		area2 := [][]float64{
+			{e.marginLeft + startX, e.currentY},
+			{e.marginLeft + startX + widths[1], e.currentY + heights[1]},
+		}
+		currentEntry.Pictures = append(currentEntry.Pictures, Picture{
+			Index: pictures[1].Index,
+			Area:  area2,
+			URL:   pictures[1].URL,
+		})
+
+		e.currentY += maxHeight + e.elementSpacing
+	}
 }
 
 // processThreePictures 处理三张图片

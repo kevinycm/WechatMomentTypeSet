@@ -103,42 +103,53 @@ func calculateSinglePicturePosition(availableWidth, availableHeight, imageWidth,
 func calculatePictureRowLayout(availableWidth, availableHeight float64, pictures []Picture, spacing float64) (widths, heights []float64, needNewPage bool) {
 	// 计算每张图片的宽高比
 	aspectRatios := make([]float64, len(pictures))
+	totalAspectRatio := 0.0
 	for i, pic := range pictures {
 		aspectRatios[i] = float64(pic.Width) / float64(pic.Height)
+		totalAspectRatio += aspectRatios[i]
 	}
 
-	// 计算每张图片的宽度
+	// 计算总间距
 	totalSpacing := spacing * float64(len(pictures)-1)
 	availableWidthForPictures := availableWidth - totalSpacing
-	widthPerPicture := availableWidthForPictures / float64(len(pictures))
 
-	// 计算每张图片的高度
+	// 初始化宽度和高度数组
 	widths = make([]float64, len(pictures))
 	heights = make([]float64, len(pictures))
-	maxHeight := 0.0
 
+	// 首先尝试使用最大可能高度
+	targetHeight := availableHeight
+	totalWidth := 0.0
+
+	// 根据高度计算每张图片的宽度
 	for i, aspectRatio := range aspectRatios {
-		widths[i] = widthPerPicture
-		heights[i] = widthPerPicture / aspectRatio
-		if heights[i] > maxHeight {
-			maxHeight = heights[i]
+		widths[i] = targetHeight * aspectRatio
+		heights[i] = targetHeight
+		totalWidth += widths[i]
+	}
+
+	// 如果总宽度超过可用宽度，需要按比例缩小
+	if totalWidth+totalSpacing > availableWidthForPictures {
+		scale := availableWidthForPictures / totalWidth
+		targetHeight *= scale
+		for i := range pictures {
+			widths[i] *= scale
+			heights[i] = targetHeight
 		}
 	}
 
 	// 检查是否满足最小尺寸要求
-	if maxHeight < minImageHeight {
-		// 尝试以最小高度为基准计算
-		maxHeight = minImageHeight
+	if targetHeight < minImageHeight {
+		// 尝试以最小高度为基准重新计算
+		targetHeight = minImageHeight
+		totalWidth = 0.0
 		for i, aspectRatio := range aspectRatios {
-			heights[i] = maxHeight
-			widths[i] = maxHeight * aspectRatio
+			widths[i] = targetHeight * aspectRatio
+			heights[i] = targetHeight
+			totalWidth += widths[i]
 		}
 
-		// 如果计算出的总宽度超过可用宽度，需要新开一页
-		totalWidth := 0.0
-		for _, width := range widths {
-			totalWidth += width
-		}
+		// 如果总宽度超过可用宽度，需要新开一页
 		if totalWidth+totalSpacing > availableWidth {
 			needNewPage = true
 		}
