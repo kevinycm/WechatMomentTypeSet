@@ -114,15 +114,6 @@ func formatTime(timeStr string) string {
 		t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute())
 }
 
-// formatYearMonth extracts and formats year-month from time string
-func formatYearMonth(timeStr string) string {
-	t, err := time.Parse("2006-01-02 15:04:05", timeStr)
-	if err != nil {
-		return "" // Return empty string if parsing fails
-	}
-	return fmt.Sprintf("%d年%d月", t.Year(), t.Month())
-}
-
 // getYearMonthKey returns a sortable key for year-month grouping
 func getYearMonthKey(timeStr string) string {
 	t, err := time.Parse("2006-01-02 15:04:05", timeStr)

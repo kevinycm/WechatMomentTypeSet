@@ -177,19 +177,21 @@
                 }
 
                 // 处理文本区域
-                entry.text_areas.forEach((area, index) => {
-                    const textDiv = document.createElement('div');
-                    textDiv.className = 'text';
-                    textDiv.textContent = entry.texts[index];
-                    textDiv.style.position = 'absolute';
-                    textDiv.style.top = area[0][1] + 'px';
-                    textDiv.style.left = area[0][0] + 'px';
-                    textDiv.style.width = (area[1][0] - area[0][0]) + 'px';
-                    textDiv.style.height = (area[1][1] - area[0][1]) + 'px';
-                    textDiv.style.fontSize = '16px';
-                    textDiv.style.lineHeight = '24px';
-                    pageDiv.appendChild(textDiv);
-                });
+                if (entry.text_areas && Array.isArray(entry.text_areas)) {
+                    entry.text_areas.forEach((area, index) => {
+                        const textDiv = document.createElement('div');
+                        textDiv.className = 'text';
+                        textDiv.textContent = entry.texts[index];
+                        textDiv.style.position = 'absolute';
+                        textDiv.style.top = area[0][1] + 'px';
+                        textDiv.style.left = area[0][0] + 'px';
+                        textDiv.style.width = (area[1][0] - area[0][0]) + 'px';
+                        textDiv.style.height = (area[1][1] - area[0][1]) + 'px';
+                        textDiv.style.fontSize = '16px';
+                        textDiv.style.lineHeight = '24px';
+                        pageDiv.appendChild(textDiv);
+                    });
+                }
 
                 // 处理图片
                 entry.pictures.forEach(pic => {
