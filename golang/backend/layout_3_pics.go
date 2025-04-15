@@ -208,7 +208,7 @@ func (e *ContinuousLayoutEngine) calculateThreePicturesLayout(pictures []Picture
 			if firstCalcError != nil {
 				errMsg = fmt.Sprintf("%s First calculation error: %v", errMsg, firstCalcError)
 			}
-			return TemplateLayout{}, fmt.Errorf(errMsg)
+			return TemplateLayout{}, fmt.Errorf("%s", errMsg)
 		}
 
 	} else {
@@ -217,6 +217,6 @@ func (e *ContinuousLayoutEngine) calculateThreePicturesLayout(pictures []Picture
 		if firstCalcError != nil {
 			errMsg = fmt.Sprintf("%s First calculation error: %v", errMsg, firstCalcError)
 		}
-		return TemplateLayout{}, fmt.Errorf(errMsg)
+		return TemplateLayout{}, fmt.Errorf("%s", errMsg)
 	}
 }
