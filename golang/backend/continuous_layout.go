@@ -647,8 +647,54 @@ func (e *ContinuousLayoutEngine) processTemplatedLayoutAndPlace(pictures []Pictu
 		}
 		// If err was nil initially, or after force_new_page recalculation, flow continues...
 	case 6:
-		layoutInfo, err = e.calculateSixPicturesLayout(pictures)
-		// TODO: Add split/force handling for 6 pictures (e.g., 3+3 or 4+2)
+		layoutInfo, err = e.calculateSixPicturesLayout(pictures, layoutAvailableHeight)
+		// --- Special handling for 6-pic ---
+		if err != nil {
+			switch err.Error() {
+			case "force_new_page":
+				fmt.Println("Info: Forcing new page for 6-picture layout due to wide/tall images not fitting.")
+				e.newPage()
+				layoutAvailableHeight = (e.marginTop + e.availableHeight) - e.currentY // Recalculate for new page
+				// Retry calculation on the new page
+				layoutInfo, err = e.calculateSixPicturesLayout(pictures, layoutAvailableHeight)
+				if err != nil {
+					fmt.Printf("Error calculating 6-pic layout even on new page: %v. Skipping.\n", err)
+					return 0
+				}
+				// If retry succeeds, err is nil, flow continues below
+
+			case "split_required":
+				fmt.Println("Info: Splitting 6-picture layout across pages (3+3).")
+				// Estimate minimum height for the first group (3 pictures)
+				minHeightForThree := e.minImageHeight // Using generic estimate
+				if layoutAvailableHeight < minHeightForThree {
+					fmt.Printf("Error: Not enough space (%.2f) for even the first three pictures (min %.2f est.) during 6-pic split. Skipping.\n", layoutAvailableHeight, minHeightForThree)
+					return 0
+				}
+				// Place first three pictures
+				heightUsed1 := e.processTemplatedLayoutAndPlace(pictures[0:3], layoutAvailableHeight)
+				if heightUsed1 <= 1e-6 {
+					fmt.Println("Error: Failed to place first three pictures during 6-pic split. Skipping rest.")
+					return 0
+				}
+				e.currentY += heightUsed1
+				// New page for the next three
+				e.newPage()
+				newLayoutAvailableHeight := (e.marginTop + e.availableHeight) - e.currentY
+				// Place last three pictures
+				heightUsed2 := e.processTemplatedLayoutAndPlace(pictures[3:6], newLayoutAvailableHeight)
+				if heightUsed2 <= 1e-6 {
+					fmt.Println("Error: Failed to place last three pictures during 6-pic split. First part placed, but operation incomplete.")
+					return 0
+				}
+				return heightUsed2 // Return height used on the *new* page
+
+			default:
+				fmt.Printf("Error calculating layout for 6 pictures: %v. Skipping placement.\n", err)
+				return 0
+			}
+		}
+		// If err was nil initially, or after force_new_page recalculation, flow continues...
 	case 7:
 		layoutInfo, err = e.calculateSevenPicturesLayout(pictures)
 		// TODO: Add split/force handling for 7 pictures (e.g., 3+4 or 4+3)
@@ -664,7 +710,7 @@ func (e *ContinuousLayoutEngine) processTemplatedLayoutAndPlace(pictures []Pictu
 
 	// --- Common Error Handling & Placement for Non-Split/Non-Force Cases ---
 	if err != nil {
-		// This handles errors from cases 3, 6, 7, 8, 9 or default case,
+		// This handles errors from cases 3, 7, 8, 9 or default case,
 		// or calculation errors not caught by specific split/force handlers,
 		// or errors from the second calculation attempt after force_new_page.
 		fmt.Printf("Error calculating layout for %d pictures (final check): %v. Skipping placement.\n", numPics, err)

@@ -50,7 +50,7 @@ func InitRealData(dsn string) error {
 		AND type = 1
 		AND media_infos IS NOT NULL 
 		AND qiniu_media_urls IS NOT NULL
-		AND (LENGTH(qiniu_media_urls) - LENGTH(REPLACE(qiniu_media_urls, ',', '')) + 1) / 2 = 5
+		AND (LENGTH(qiniu_media_urls) - LENGTH(REPLACE(qiniu_media_urls, ',', '')) + 1) / 2 = 6
 		ORDER BY release_time DESC
 	`)
 
