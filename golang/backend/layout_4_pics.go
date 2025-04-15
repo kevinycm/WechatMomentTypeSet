@@ -9,10 +9,10 @@ import (
 
 // calculateLayout_4_2x2 calculates the 2x2 grid layout.
 // Aims for uniform height within each row.
-func calculateLayout_4_2x2(e *ContinuousLayoutEngine, ARs []float64, types []string, AW, spacing float64) (TemplateLayout, bool, error) {
+func calculateLayout_4_2x2(e *ContinuousLayoutEngine, ARs []float64, types []string, AW, spacing float64) (TemplateLayout, error) {
 	layout := TemplateLayout{Positions: make([][]float64, 4), Dimensions: make([][]float64, 4)}
 	if len(ARs) != 4 || len(types) != 4 {
-		return layout, false, fmt.Errorf("2x2 layout requires 4 ARs and types")
+		return layout, fmt.Errorf("2x2 layout requires 4 ARs and types")
 	}
 	AR0, AR1, AR2, AR3 := ARs[0], ARs[1], ARs[2], ARs[3]
 
@@ -23,10 +23,10 @@ func calculateLayout_4_2x2(e *ContinuousLayoutEngine, ARs []float64, types []str
 	if topRowW > 1e-6 && topARSum > 1e-6 {
 		H_top = topRowW / topARSum
 	} else {
-		return layout, false, fmt.Errorf("cannot calculate 2x2 top row height (W=%.2f, ARSum=%.2f)", topRowW, topARSum)
+		return layout, fmt.Errorf("cannot calculate 2x2 top row height (W=%.2f, ARSum=%.2f)", topRowW, topARSum)
 	}
 	if H_top <= 1e-6 {
-		return layout, false, fmt.Errorf("2x2 calculated zero height for top row")
+		return layout, fmt.Errorf("2x2 calculated zero height for top row")
 	}
 	W0 := H_top * AR0
 	W1 := H_top * AR1
@@ -38,10 +38,10 @@ func calculateLayout_4_2x2(e *ContinuousLayoutEngine, ARs []float64, types []str
 	if bottomRowW > 1e-6 && bottomARSum > 1e-6 {
 		H_bottom = bottomRowW / bottomARSum
 	} else {
-		return layout, false, fmt.Errorf("cannot calculate 2x2 bottom row height (W=%.2f, ARSum=%.2f)", bottomRowW, bottomARSum)
+		return layout, fmt.Errorf("cannot calculate 2x2 bottom row height (W=%.2f, ARSum=%.2f)", bottomRowW, bottomARSum)
 	}
 	if H_bottom <= 1e-6 {
-		return layout, false, fmt.Errorf("2x2 calculated zero height for bottom row")
+		return layout, fmt.Errorf("2x2 calculated zero height for bottom row")
 	}
 	W2 := H_bottom * AR2
 	W3 := H_bottom * AR3
@@ -58,27 +58,18 @@ func calculateLayout_4_2x2(e *ContinuousLayoutEngine, ARs []float64, types []str
 	layout.Positions[3] = []float64{W2 + spacing, H_top + spacing}
 	layout.Dimensions[3] = []float64{W3, H_bottom}
 
-	// Check minimum heights
-	meetsMin := true
-	heights := []float64{H_top, H_top, H_bottom, H_bottom}
-	for i, picType := range types {
-		requiredMinHeight := getRequiredMinHeight(e, picType)
-		if heights[i] < requiredMinHeight {
-			meetsMin = false
-			break
-		}
-	}
+	// Minimum height check removed - will be done in the main function after scaling.
 
-	return layout, meetsMin, nil
+	return layout, nil
 }
 
 // calculateLayout_4_4Col calculates the 4-pics-in-a-column layout.
 
 // calculateLayout_4_1T3B calculates the 1 Top, 3 Bottom layout.
-func calculateLayout_4_1T3B(e *ContinuousLayoutEngine, ARs []float64, types []string, AW, spacing float64) (TemplateLayout, bool, error) {
+func calculateLayout_4_1T3B(e *ContinuousLayoutEngine, ARs []float64, types []string, AW, spacing float64) (TemplateLayout, error) {
 	layout := TemplateLayout{Positions: make([][]float64, 4), Dimensions: make([][]float64, 4)}
 	if len(ARs) != 4 || len(types) != 4 {
-		return layout, false, fmt.Errorf("1T3B layout requires 4 ARs and types")
+		return layout, fmt.Errorf("1T3B layout requires 4 ARs and types")
 	}
 	AR0, AR1, AR2, AR3 := ARs[0], ARs[1], ARs[2], ARs[3]
 
@@ -88,10 +79,10 @@ func calculateLayout_4_1T3B(e *ContinuousLayoutEngine, ARs []float64, types []st
 	if AR0 > 1e-6 {
 		H0 = W0 / AR0
 	} else {
-		return layout, false, fmt.Errorf("1T3B calculated zero height for top pic")
+		return layout, fmt.Errorf("1T3B calculated zero height for top pic")
 	}
 	if H0 <= 1e-6 {
-		return layout, false, fmt.Errorf("1T3B calculated zero height for top pic")
+		return layout, fmt.Errorf("1T3B calculated zero height for top pic")
 	}
 
 	// Bottom row (1, 2, 3)
@@ -101,10 +92,10 @@ func calculateLayout_4_1T3B(e *ContinuousLayoutEngine, ARs []float64, types []st
 	if bottomRowW > 1e-6 && bottomARSum > 1e-6 {
 		H_bottom = bottomRowW / bottomARSum
 	} else {
-		return layout, false, fmt.Errorf("cannot calculate 1T3B bottom row height (W=%.2f, ARSum=%.2f)", bottomRowW, bottomARSum)
+		return layout, fmt.Errorf("cannot calculate 1T3B bottom row height (W=%.2f, ARSum=%.2f)", bottomRowW, bottomARSum)
 	}
 	if H_bottom <= 1e-6 {
-		return layout, false, fmt.Errorf("1T3B calculated zero height for bottom row")
+		return layout, fmt.Errorf("1T3B calculated zero height for bottom row")
 	}
 	W1 := H_bottom * AR1
 	W2 := H_bottom * AR2
@@ -127,25 +118,16 @@ func calculateLayout_4_1T3B(e *ContinuousLayoutEngine, ARs []float64, types []st
 	layout.Positions[3] = []float64{currentX, bottomY}
 	layout.Dimensions[3] = []float64{W3, H_bottom}
 
-	// Check minimum heights
-	meetsMin := true
-	heights := []float64{H0, H_bottom, H_bottom, H_bottom}
-	for i, picType := range types {
-		requiredMinHeight := getRequiredMinHeight(e, picType)
-		if heights[i] < requiredMinHeight {
-			meetsMin = false
-			break
-		}
-	}
+	// Minimum height check removed - will be done in the main function after scaling.
 
-	return layout, meetsMin, nil
+	return layout, nil
 }
 
 // calculateLayout_4_3T1B calculates the 3 Top, 1 Bottom layout.
-func calculateLayout_4_3T1B(e *ContinuousLayoutEngine, ARs []float64, types []string, AW, spacing float64) (TemplateLayout, bool, error) {
+func calculateLayout_4_3T1B(e *ContinuousLayoutEngine, ARs []float64, types []string, AW, spacing float64) (TemplateLayout, error) {
 	layout := TemplateLayout{Positions: make([][]float64, 4), Dimensions: make([][]float64, 4)}
 	if len(ARs) != 4 || len(types) != 4 {
-		return layout, false, fmt.Errorf("3T1B layout requires 4 ARs and types")
+		return layout, fmt.Errorf("3T1B layout requires 4 ARs and types")
 	}
 	AR0, AR1, AR2, AR3 := ARs[0], ARs[1], ARs[2], ARs[3]
 
@@ -156,10 +138,10 @@ func calculateLayout_4_3T1B(e *ContinuousLayoutEngine, ARs []float64, types []st
 	if topRowW > 1e-6 && topARSum > 1e-6 {
 		H_top = topRowW / topARSum
 	} else {
-		return layout, false, fmt.Errorf("cannot calculate 3T1B top row height (W=%.2f, ARSum=%.2f)", topRowW, topARSum)
+		return layout, fmt.Errorf("cannot calculate 3T1B top row height (W=%.2f, ARSum=%.2f)", topRowW, topARSum)
 	}
 	if H_top <= 1e-6 {
-		return layout, false, fmt.Errorf("3T1B calculated zero height for top row")
+		return layout, fmt.Errorf("3T1B calculated zero height for top row")
 	}
 	W0 := H_top * AR0
 	W1 := H_top * AR1
@@ -171,10 +153,10 @@ func calculateLayout_4_3T1B(e *ContinuousLayoutEngine, ARs []float64, types []st
 	if AR3 > 1e-6 {
 		H3 = W3 / AR3
 	} else {
-		return layout, false, fmt.Errorf("3T1B calculated zero height for bottom pic")
+		return layout, fmt.Errorf("3T1B calculated zero height for bottom pic")
 	}
 	if H3 <= 1e-6 {
-		return layout, false, fmt.Errorf("3T1B calculated zero height for bottom pic")
+		return layout, fmt.Errorf("3T1B calculated zero height for bottom pic")
 	}
 
 	layout.TotalHeight = H_top + spacing + H3
@@ -193,18 +175,9 @@ func calculateLayout_4_3T1B(e *ContinuousLayoutEngine, ARs []float64, types []st
 	layout.Positions[3] = []float64{0, H_top + spacing}
 	layout.Dimensions[3] = []float64{W3, H3}
 
-	// Check minimum heights
-	meetsMin := true
-	heights := []float64{H_top, H_top, H_top, H3}
-	for i, picType := range types {
-		requiredMinHeight := getRequiredMinHeight(e, picType)
-		if heights[i] < requiredMinHeight {
-			meetsMin = false
-			break
-		}
-	}
+	// Minimum height check removed - will be done in the main function after scaling.
 
-	return layout, meetsMin, nil
+	return layout, nil
 }
 
 // calculateLayout_4_1L3R calculates the 1 Left, 3 Right Stacked layout.
@@ -216,10 +189,10 @@ func calculateLayout_4_3T1B(e *ContinuousLayoutEngine, ARs []float64, types []st
 // Check if W0 + spacing + WR = AW.
 // This often requires iterative solving or algebraic manipulation.
 // Simpler approach: Treat right side as a single column, calculate its total AR.
-func calculateLayout_4_1L3R(e *ContinuousLayoutEngine, ARs []float64, types []string, AW, spacing float64) (TemplateLayout, bool, error) {
+func calculateLayout_4_1L3R(e *ContinuousLayoutEngine, ARs []float64, types []string, AW, spacing float64) (TemplateLayout, error) {
 	layout := TemplateLayout{Positions: make([][]float64, 4), Dimensions: make([][]float64, 4)}
 	if len(ARs) != 4 || len(types) != 4 {
-		return layout, false, fmt.Errorf("1L3R layout requires 4 ARs and types")
+		return layout, fmt.Errorf("1L3R layout requires 4 ARs and types")
 	}
 	AR0, AR1, AR2, AR3 := ARs[0], ARs[1], ARs[2], ARs[3]
 
@@ -270,15 +243,15 @@ func calculateLayout_4_1L3R(e *ContinuousLayoutEngine, ARs []float64, types []st
 	if denominator > 1e-6 {
 		WR = numerator / denominator
 	} else {
-		return layout, false, fmt.Errorf("1L3R cannot solve for WR (denominator zero)")
+		return layout, fmt.Errorf("1L3R cannot solve for WR (denominator zero)")
 	}
 
 	if WR <= 1e-6 || WR >= AW-spacing { // Check if WR is valid
-		return layout, false, fmt.Errorf("1L3R geometry infeasible (WR=%.2f)", WR)
+		return layout, fmt.Errorf("1L3R geometry infeasible (WR=%.2f)", WR)
 	}
 	W0 := AW - spacing - WR
 	if W0 <= 1e-6 {
-		return layout, false, fmt.Errorf("1L3R geometry infeasible (W0=%.2f)", W0)
+		return layout, fmt.Errorf("1L3R geometry infeasible (W0=%.2f)", W0)
 	}
 
 	H := 0.0
@@ -288,27 +261,27 @@ func calculateLayout_4_1L3R(e *ContinuousLayoutEngine, ARs []float64, types []st
 		H = WR*invSumR + 2*spacing
 	} // Calc H
 	if H <= 1e-6 {
-		return layout, false, fmt.Errorf("1L3R calculated zero total height")
+		return layout, fmt.Errorf("1L3R calculated zero total height")
 	}
 
 	H1, H2, H3 := 0.0, 0.0, 0.0
 	if AR1 > 1e-6 {
 		H1 = WR / AR1
 	} else {
-		return layout, false, fmt.Errorf("1L3R zero height pic 1")
+		return layout, fmt.Errorf("1L3R zero height pic 1")
 	}
 	if AR2 > 1e-6 {
 		H2 = WR / AR2
 	} else {
-		return layout, false, fmt.Errorf("1L3R zero height pic 2")
+		return layout, fmt.Errorf("1L3R zero height pic 2")
 	}
 	if AR3 > 1e-6 {
 		H3 = WR / AR3
 	} else {
-		return layout, false, fmt.Errorf("1L3R zero height pic 3")
+		return layout, fmt.Errorf("1L3R zero height pic 3")
 	}
 	if H1 <= 1e-6 || H2 <= 1e-6 || H3 <= 1e-6 {
-		return layout, false, fmt.Errorf("1L3R calculated zero height in right stack")
+		return layout, fmt.Errorf("1L3R calculated zero height in right stack")
 	}
 
 	// Verify calculated height matches estimate (within tolerance)
@@ -337,26 +310,17 @@ func calculateLayout_4_1L3R(e *ContinuousLayoutEngine, ARs []float64, types []st
 	layout.Positions[3] = []float64{rightX, currentY}
 	layout.Dimensions[3] = []float64{WR, H3}
 
-	// Check minimum heights
-	meetsMin := true
-	heights := []float64{H, H1, H2, H3}
-	for i, picType := range types {
-		requiredMinHeight := getRequiredMinHeight(e, picType)
-		if heights[i] < requiredMinHeight {
-			meetsMin = false
-			break
-		}
-	}
+	// Minimum height check removed - will be done in the main function after scaling.
 
-	return layout, meetsMin, nil
+	return layout, nil
 }
 
 // calculateLayout_4_3L1R calculates the 3 Left Stacked, 1 Right layout.
 // Mirror image of 1L3R.
-func calculateLayout_4_3L1R(e *ContinuousLayoutEngine, ARs []float64, types []string, AW, spacing float64) (TemplateLayout, bool, error) {
+func calculateLayout_4_3L1R(e *ContinuousLayoutEngine, ARs []float64, types []string, AW, spacing float64) (TemplateLayout, error) {
 	layout := TemplateLayout{Positions: make([][]float64, 4), Dimensions: make([][]float64, 4)}
 	if len(ARs) != 4 || len(types) != 4 {
-		return layout, false, fmt.Errorf("3L1R layout requires 4 ARs and types")
+		return layout, fmt.Errorf("3L1R layout requires 4 ARs and types")
 	}
 	AR0, AR1, AR2, AR3 := ARs[0], ARs[1], ARs[2], ARs[3] // 0,1,2 are left stack; 3 is right
 
@@ -384,15 +348,15 @@ func calculateLayout_4_3L1R(e *ContinuousLayoutEngine, ARs []float64, types []st
 	if denominator > 1e-6 {
 		WL = numerator / denominator
 	} else {
-		return layout, false, fmt.Errorf("3L1R cannot solve for WL (denominator zero)")
+		return layout, fmt.Errorf("3L1R cannot solve for WL (denominator zero)")
 	}
 
 	if WL <= 1e-6 || WL >= AW-spacing { // Check if WL is valid
-		return layout, false, fmt.Errorf("3L1R geometry infeasible (WL=%.2f)", WL)
+		return layout, fmt.Errorf("3L1R geometry infeasible (WL=%.2f)", WL)
 	}
 	W3 := AW - spacing - WL
 	if W3 <= 1e-6 {
-		return layout, false, fmt.Errorf("3L1R geometry infeasible (W3=%.2f)", W3)
+		return layout, fmt.Errorf("3L1R geometry infeasible (W3=%.2f)", W3)
 	}
 
 	H := 0.0
@@ -402,27 +366,27 @@ func calculateLayout_4_3L1R(e *ContinuousLayoutEngine, ARs []float64, types []st
 		H = WL*invSumL + 2*spacing
 	} // Calc H
 	if H <= 1e-6 {
-		return layout, false, fmt.Errorf("3L1R calculated zero total height")
+		return layout, fmt.Errorf("3L1R calculated zero total height")
 	}
 
 	H0, H1, H2 := 0.0, 0.0, 0.0
 	if AR0 > 1e-6 {
 		H0 = WL / AR0
 	} else {
-		return layout, false, fmt.Errorf("3L1R zero height pic 0")
+		return layout, fmt.Errorf("3L1R zero height pic 0")
 	}
 	if AR1 > 1e-6 {
 		H1 = WL / AR1
 	} else {
-		return layout, false, fmt.Errorf("3L1R zero height pic 1")
+		return layout, fmt.Errorf("3L1R zero height pic 1")
 	}
 	if AR2 > 1e-6 {
 		H2 = WL / AR2
 	} else {
-		return layout, false, fmt.Errorf("3L1R zero height pic 2")
+		return layout, fmt.Errorf("3L1R zero height pic 2")
 	}
 	if H0 <= 1e-6 || H1 <= 1e-6 || H2 <= 1e-6 {
-		return layout, false, fmt.Errorf("3L1R calculated zero height in left stack")
+		return layout, fmt.Errorf("3L1R calculated zero height in left stack")
 	}
 
 	// Verify calculated height matches estimate (within tolerance)
@@ -449,34 +413,9 @@ func calculateLayout_4_3L1R(e *ContinuousLayoutEngine, ARs []float64, types []st
 	layout.Positions[3] = []float64{WL + spacing, 0}
 	layout.Dimensions[3] = []float64{W3, H}
 
-	// Check minimum heights
-	meetsMin := true
-	heights := []float64{H0, H1, H2, H}
-	for i, picType := range types {
-		requiredMinHeight := getRequiredMinHeight(e, picType)
-		if heights[i] < requiredMinHeight {
-			meetsMin = false
-			break
-		}
-	}
+	// Minimum height check removed - will be done in the main function after scaling.
 
-	return layout, meetsMin, nil
-}
-
-// Helper to get minimum height based on type
-func getRequiredMinHeight(e *ContinuousLayoutEngine, picType string) float64 {
-	switch picType {
-	case "wide":
-		return e.minWideHeight
-	case "tall":
-		return e.minTallHeight
-	case "landscape":
-		return e.minLandscapeHeight
-	case "portrait":
-		return e.minPortraitHeight
-	default: // square, unknown
-		return e.minLandscapeHeight // Use landscape as fallback
-	}
+	return layout, nil
 }
 
 // --- Main Calculation Function for 4 Pictures ---
@@ -511,7 +450,7 @@ func (e *ContinuousLayoutEngine) calculateFourPicturesLayout(pictures []Picture,
 	}
 
 	// --- Define Layout Calculation Functions Map ---
-	type calcFuncType func(*ContinuousLayoutEngine, []float64, []string, float64, float64) (TemplateLayout, bool, error)
+	type calcFuncType func(*ContinuousLayoutEngine, []float64, []string, float64, float64) (TemplateLayout, error)
 	possibleLayouts := map[string]calcFuncType{
 		"2x2":  calculateLayout_4_2x2,
 		"1T3B": calculateLayout_4_1T3B,
@@ -530,7 +469,7 @@ func (e *ContinuousLayoutEngine) calculateFourPicturesLayout(pictures []Picture,
 	// --- Calculate and Evaluate All Layouts ---
 	for name, calcFunc := range possibleLayouts {
 		// Calculate initial layout
-		layout, _, err := calcFunc(e, ARs, types, AW, spacing) // Pass engine e
+		layout, err := calcFunc(e, ARs, types, AW, spacing)
 		if err != nil {
 			fmt.Printf("Debug: Error calculating initial layout %s: %v\n", name, err)
 			if firstCalcError == nil {
@@ -573,7 +512,7 @@ func (e *ContinuousLayoutEngine) calculateFourPicturesLayout(pictures []Picture,
 		meetsScaledMin := true
 		maxViolationFactor := 1.0
 		for i, picType := range types {
-			requiredMinHeight := getRequiredMinHeight(e, picType)
+			requiredMinHeight := getRequiredMinHeight(e, picType, len(pictures))
 			if i < len(layout.Dimensions) && len(layout.Dimensions[i]) == 2 {
 				actualHeight := layout.Dimensions[i][1]
 				if actualHeight < requiredMinHeight {

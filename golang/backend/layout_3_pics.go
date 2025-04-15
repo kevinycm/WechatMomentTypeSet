@@ -117,10 +117,11 @@ func (e *ContinuousLayoutEngine) calculateThreePicturesLayout(pictures []Picture
 
 			if i < len(layout.Dimensions) && len(layout.Dimensions[i]) == 2 {
 				actualHeight := layout.Dimensions[i][1]
-				if actualHeight < requiredMinHeights[i] {
+				requiredMinHeight := getRequiredMinHeight(e, picType, 3) // Pass numPics=3
+				if actualHeight < requiredMinHeight {
 					meetsScaledMin = false
 					if actualHeight > 1e-6 { // Avoid division by zero
-						violationRatio := requiredMinHeights[i] / actualHeight
+						violationRatio := requiredMinHeight / actualHeight
 						if violationRatio > maxViolationFactor {
 							maxViolationFactor = violationRatio
 						}

@@ -486,10 +486,10 @@ func (e *ContinuousLayoutEngine) calculateSixPicturesLayout(pictures []Picture, 
 	}
 
 	// --- Store results from all layout attempts ---
-	validLayouts := make(map[string]TemplateLayout) // Layouts meeting strict minimums
-	layoutAreas := make(map[string]float64)         // Areas for strictly valid layouts
-	// scaledLayouts := make(map[string]TemplateLayout)   // Optional: Store all scaled layouts for fallback
-	// layoutViolationFactors := make(map[string]float64) // Optional: Store violation factors for fallback
+	validLayouts := make(map[string]TemplateLayout)    // Layouts meeting strict minimums
+	layoutAreas := make(map[string]float64)            // Areas for strictly valid layouts
+	scaledLayouts := make(map[string]TemplateLayout)   // Store all calculated & scaled layouts
+	layoutViolationFactors := make(map[string]float64) // Store violation factors for fallback
 	var firstCalcError error
 
 	// --- Calculate and Evaluate All Layouts ---
@@ -528,29 +528,39 @@ func (e *ContinuousLayoutEngine) calculateSixPicturesLayout(pictures []Picture, 
 				continue
 			}
 		}
-		// scaledLayouts[name] = layout // Optional Store
+		scaledLayouts[name] = layout // Store the final (potentially scaled) layout
 
-		// --- Check Minimum Heights After Scaling ---
+		// --- Check Minimum Heights After Scaling & Calculate Violation Factor ---
 		meetsScaledMin := true
-		// maxViolationFactor := 1.0 // Optional Store
-		for i, picType := range types {
-			requiredMinHeight := getRequiredMinHeight(e, picType) // Use global helper
-			if i < len(layout.Dimensions) && len(layout.Dimensions[i]) == 2 {
-				actualHeight := layout.Dimensions[i][1]
-				if actualHeight < requiredMinHeight {
-					meetsScaledMin = false
-					// Optional: Calculate violation factor
-					// if actualHeight > 1e-6 { ... } else { maxViolationFactor = math.Inf(1) }
-					break // Exit check early if one fails
+		maxViolationFactor := 1.0 // Start assuming it meets minimums
+		// Pass numPics = 6
+		if !checkMinHeights(e, layout, types, 6) {
+			meetsScaledMin = false
+			// Calculate violation factor only if it failed
+			for i, picType := range types {
+				requiredMinHeight := getRequiredMinHeight(e, picType, len(pictures))
+				if i < len(layout.Dimensions) && len(layout.Dimensions[i]) == 2 {
+					actualHeight := layout.Dimensions[i][1]
+					if actualHeight < requiredMinHeight {
+						if actualHeight > 1e-6 {
+							violationRatio := requiredMinHeight / actualHeight
+							if violationRatio > maxViolationFactor {
+								maxViolationFactor = violationRatio
+							}
+						} else {
+							maxViolationFactor = math.Inf(1) // Assign infinite factor if actual height is zero
+						}
+					}
+				} else {
+					maxViolationFactor = math.Inf(1) // Treat invalid data as infinite violation
+					break
 				}
-			} else {
-				fmt.Printf("Warning: Invalid dimensions data for layout %s, picture %d\n", name, i)
-				meetsScaledMin = false
-				// maxViolationFactor = math.Inf(1) // Optional Store
-				break
 			}
+			fmt.Printf("Debug: 6-Pic Layout %s failed minimum height check (Scale: %.2f, ViolationFactor: %.2f).\n", name, scale, maxViolationFactor)
+		} else {
+			fmt.Printf("Debug: 6-Pic Layout %s passed minimum height check (Scale: %.2f).\n", name, scale)
 		}
-		// layoutViolationFactors[name] = maxViolationFactor // Optional Store
+		layoutViolationFactors[name] = maxViolationFactor // Store violation factor regardless
 
 		// --- Store Strictly Valid Layout and Calculate Area ---
 		if meetsScaledMin {
@@ -562,9 +572,7 @@ func (e *ContinuousLayoutEngine) calculateSixPicturesLayout(pictures []Picture, 
 				}
 			}
 			layoutAreas[name] = totalArea
-			fmt.Printf("Debug: 6-Pic Layout %s valid (Scale: %.2f), Area: %.2f\n", name, scale, totalArea)
-		} else {
-			fmt.Printf("Debug: 6-Pic Layout %s failed minimum height check (Scale: %.2f).\n", name, scale)
+			fmt.Printf("Debug: 6-Pic Layout %s stored as valid. Area: %.2f\n", name, totalArea)
 		}
 	}
 
@@ -600,35 +608,3 @@ func (e *ContinuousLayoutEngine) calculateSixPicturesLayout(pictures []Picture, 
 		// Currently, if no layout is strictly valid, we signal error.
 	}
 }
-
-// Helper function to get minimum height based on type (should be global)
-/*
-func getRequiredMinHeight(e *ContinuousLayoutEngine, picType string) float64 {
-	switch picType {
-	case "wide": return e.minWideHeight
-	case "tall": return e.minTallHeight
-	case "landscape": return e.minLandscapeHeight
-	case "portrait": return e.minPortraitHeight
-	default: return e.minLandscapeHeight // Fallback
-	}
-}
-*/
-
-// Helper function to calculate row layout (should be global)
-/*
-func calculateRowLayout(ARs []float64, AW, spacing float64) (widths []float64, height float64, err error) {
-	numPicsInRow := len(ARs)
-	if numPicsInRow < 1 { return nil, 0, fmt.Errorf("zero pictures in row") }
-	totalSpacing := float64(numPicsInRow-1) * spacing
-	rowAvailableWidth := AW - totalSpacing
-	if rowAvailableWidth <= 1e-6 { return nil, 0, fmt.Errorf("row width too small") }
-	totalARSum := 0.0
-	for _, ar := range ARs { if ar <= 1e-6 { return nil, 0, fmt.Errorf("invalid AR") }; totalARSum += ar }
-	if totalARSum <= 1e-6 { return nil, 0, fmt.Errorf("AR sum too small") }
-	height = rowAvailableWidth / totalARSum
-	if height <= 1e-6 { return nil, 0, fmt.Errorf("calculated height too small") }
-	widths = make([]float64, numPicsInRow)
-	for i, ar := range ARs { widths[i] = height * ar }
-	return widths, height, nil
-}
-*/

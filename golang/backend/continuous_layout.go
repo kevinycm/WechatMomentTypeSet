@@ -33,33 +33,37 @@ type PageEntry struct {
 
 // ContinuousLayoutEngine represents the continuous layout engine
 type ContinuousLayoutEngine struct {
-	entries            []Entry
-	pages              []ContinuousLayoutPage
-	currentPage        *ContinuousLayoutPage
-	marginLeft         float64
-	marginRight        float64
-	marginTop          float64
-	marginBottom       float64
-	availableWidth     float64
-	availableHeight    float64
-	timeHeight         float64
-	fontSize           float64
-	lineHeight         float64
-	currentY           float64
-	timeAreaBottom     float64
-	entrySpacing       float64 // 条目之间的间距
-	elementSpacing     float64 // 元素整体之间的间距
-	imageSpacing       float64 // 图片之间的间距
-	minWideHeight      float64 // Min height for Wide pics (AR >= 3)
-	minTallHeight      float64 // Min height for Tall pics (AR <= 1/3)
-	minLandscapeHeight float64 // Min height for Landscape pics (1 < AR < 3)
-	minPortraitHeight  float64 // Min height for Portrait pics (1/3 < AR < 1)
-	singleImageHeight  float64 // 单张竖图的默认高度
-	singleImageWidth   float64 // 单张横图的默认宽度
-	minImageHeight     float64 // 单张竖图的最小展示高度
-	minImageWidth      float64 // 单张横图的最小展示宽度
-	currentYearMonth   string
-	bottomMargin       float64
+	entries                          []Entry
+	pages                            []ContinuousLayoutPage
+	currentPage                      *ContinuousLayoutPage
+	marginLeft                       float64
+	marginRight                      float64
+	marginTop                        float64
+	marginBottom                     float64
+	availableWidth                   float64
+	availableHeight                  float64
+	timeHeight                       float64
+	fontSize                         float64
+	lineHeight                       float64
+	currentY                         float64
+	timeAreaBottom                   float64
+	entrySpacing                     float64 // 条目之间的间距
+	elementSpacing                   float64 // 元素整体之间的间距
+	imageSpacing                     float64 // 图片之间的间距
+	minWideHeight                    float64 // Min height for Wide pics (AR >= 3)
+	minTallHeight                    float64 // Min height for Tall pics (AR <= 1/3)
+	minLandscapeHeight               float64 // Base Min height for Landscape pics (1 < AR < 3) - Used for < 5 pics
+	minPortraitHeight                float64 // Base Min height for Portrait pics (1/3 < AR < 1) - Used for < 5 pics
+	minLandscapeHeightLargeGroup     float64 // Added: Min height for Landscape pics (>= 5 pics)
+	minPortraitHeightLargeGroup      float64 // Added: Min height for Portrait pics (>= 5 pics)
+	minLandscapeHeightVeryLargeGroup float64 // Added: Min height for Landscape pics (>= 8 pics)
+	minPortraitHeightVeryLargeGroup  float64 // Added: Min height for Portrait pics (>= 8 pics)
+	singleImageHeight                float64 // 单张竖图的默认高度
+	singleImageWidth                 float64 // 单张横图的默认宽度
+	minImageHeight                   float64 // 单张竖图的最小展示高度
+	minImageWidth                    float64 // 单张横图的最小展示宽度
+	currentYearMonth                 string
+	bottomMargin                     float64
 }
 
 // Helper function to get picture type based on Aspect Ratio (AR)
@@ -79,29 +83,98 @@ func getPictureType(aspectRatio float64) string {
 	}
 }
 
+// Helper function to get the required minimum height for a given picture type and group size.
+// UPDATED SIGNATURE AND LOGIC
+func getRequiredMinHeight(e *ContinuousLayoutEngine, picType string, numPics int) float64 {
+	switch picType {
+	case "wide":
+		return e.minWideHeight // Wide min height is constant
+	case "tall":
+		return e.minTallHeight // Tall min height is constant
+	case "landscape":
+		if numPics >= 8 {
+			return e.minLandscapeHeightVeryLargeGroup // Use specific value for >= 8 pics
+		} else if numPics >= 5 {
+			return e.minLandscapeHeightLargeGroup // Use 600 for 5-7 pics
+		} else {
+			return e.minLandscapeHeight // Use base 400 for < 5 pics
+		}
+	case "portrait":
+		if numPics >= 8 {
+			return e.minPortraitHeightVeryLargeGroup // Use specific value for >= 8 pics
+		} else if numPics >= 5 {
+			return e.minPortraitHeightLargeGroup // Use 900 for 5-7 pics
+		} else {
+			return e.minPortraitHeight // Use base 600 for < 5 pics
+		}
+	default: // square, unknown
+		// Use landscape height as fallback, respecting numPics tiers
+		if numPics >= 8 {
+			return e.minLandscapeHeightVeryLargeGroup
+		} else if numPics >= 5 {
+			return e.minLandscapeHeightLargeGroup
+		} else {
+			return e.minLandscapeHeight
+		}
+	}
+}
+
+// checkMinHeights verifies if all pictures in a calculated layout meet their type-specific minimum height requirements.
+// UPDATED TO CALL getRequiredMinHeight WITH numPics
+func checkMinHeights(e *ContinuousLayoutEngine, layout TemplateLayout, types []string, numPics int) bool {
+	if len(layout.Dimensions) != numPics || len(types) != numPics {
+		fmt.Printf("Warning: checkMinHeights received mismatched lengths (Dimensions: %d, Types: %d, expected: %d)\n", len(layout.Dimensions), len(types), numPics)
+		return false // Data inconsistency
+	}
+
+	for i := 0; i < numPics; i++ {
+		picType := types[i]
+		// Pass numPics to get the correct minimum height
+		requiredMinHeight := getRequiredMinHeight(e, picType, numPics)
+
+		// Safely access dimensions
+		if i >= len(layout.Dimensions) || len(layout.Dimensions[i]) != 2 {
+			fmt.Printf("Warning: Invalid dimensions data for picture %d in checkMinHeights.\n", i)
+			return false // Invalid layout data
+		}
+		actualHeight := layout.Dimensions[i][1]
+
+		if actualHeight < requiredMinHeight-1e-6 { // Use tolerance for float comparison
+			fmt.Printf("Debug: Min height check failed for pic %d (Type: %s, NumPics: %d). Required: %.2f, Actual: %.2f\n", i, picType, numPics, requiredMinHeight, actualHeight)
+			return false // Minimum height not met
+		}
+	}
+	return true // All checks passed
+}
+
 // NewContinuousLayoutEngine creates a new continuous layout engine
+// UPDATED TO INITIALIZE NEW FIELDS
 func NewContinuousLayoutEngine(entries []Entry) *ContinuousLayoutEngine {
 	engine := &ContinuousLayoutEngine{
-		entries:            entries,
-		marginLeft:         142,
-		marginRight:        142,
-		marginTop:          189,
-		marginBottom:       189,
-		timeHeight:         100,
-		fontSize:           66.67, // 对应72DPI的16px
-		lineHeight:         100,   // 对应72DPI的24px
-		entrySpacing:       150,   // 条目之间的间距
-		elementSpacing:     30,    // 元素整体之间的间距
-		imageSpacing:       15,    // 图片之间的间距
-		minWideHeight:      400,   // Min height for Wide pics (AR >= 3)
-		minTallHeight:      600,   // Min height for Tall pics (AR <= 1/3)
-		minLandscapeHeight: 400,   // Min height for Landscape pics (1 < AR < 3)
-		minPortraitHeight:  600,   // Min height for Portrait pics (1/3 < AR < 1)
-		singleImageHeight:  2808,  // 设置单张竖图的默认高度
-		singleImageWidth:   1695,  // 设置单张横图的默认宽度
-		minImageHeight:     800,   // 设置单张竖图的最小展示高度
-		minImageWidth:      1200,  // 设置单张横图的最小展示宽度
-		bottomMargin:       100,   // 底部边距
+		entries:                          entries,
+		marginLeft:                       142,
+		marginRight:                      142,
+		marginTop:                        189,
+		marginBottom:                     189,
+		timeHeight:                       100,
+		fontSize:                         66.67, // 对应72DPI的16px
+		lineHeight:                       100,   // 对应72DPI的24px
+		entrySpacing:                     150,   // 条目之间的间距
+		elementSpacing:                   30,    // 元素整体之间的间距
+		imageSpacing:                     15,    // 图片之间的间距
+		minWideHeight:                    600,   // Min height for Wide pics (AR >= 3)
+		minTallHeight:                    800,   // Min height for Tall pics (AR <= 1/3)
+		minLandscapeHeight:               600,   // Base Min height for Landscape (for < 5 pics)
+		minPortraitHeight:                600,   // Base Min height for Portrait (for < 5 pics)
+		minLandscapeHeightLargeGroup:     600,   // Min height Landscape (5-7 pics)
+		minPortraitHeightLargeGroup:      800,   // Min height Portrait (5-7 pics)
+		minLandscapeHeightVeryLargeGroup: 450,   // Added: Min height Landscape (>= 8 pics) - Lower value
+		minPortraitHeightVeryLargeGroup:  900,   // Added: Min height Portrait (>= 8 pics) - Lower value
+		singleImageHeight:                2808,  // 设置单张竖图的默认高度
+		singleImageWidth:                 1695,  // 设置单张横图的默认宽度
+		minImageHeight:                   800,   // 设置单张竖图的最小展示高度
+		minImageWidth:                    1200,  // 设置单张横图的最小展示宽度
+		bottomMargin:                     100,   // 底部边距
 	}
 	engine.availableWidth = 2480 - engine.marginLeft - engine.marginRight
 	engine.availableHeight = 3508 - engine.marginTop - engine.marginBottom
@@ -435,26 +508,25 @@ func (e *ContinuousLayoutEngine) processPictures(pictures []Picture) {
 			picType := getPictureType(ar)
 			switch picType {
 			case "wide":
-				minRequiredHeightForPics = e.minWideHeight
+				minRequiredHeightForPics = getRequiredMinHeight(e, picType, numPics)
 			case "tall":
-				minRequiredHeightForPics = e.minTallHeight
+				minRequiredHeightForPics = getRequiredMinHeight(e, picType, numPics)
 			case "landscape":
-				minRequiredHeightForPics = e.minLandscapeHeight
+				minRequiredHeightForPics = getRequiredMinHeight(e, picType, numPics)
 			case "portrait":
-				minRequiredHeightForPics = e.minPortraitHeight
+				minRequiredHeightForPics = getRequiredMinHeight(e, picType, numPics)
 			default: // square or unknown
-				minRequiredHeightForPics = e.minLandscapeHeight // Use landscape as fallback
+				minRequiredHeightForPics = getRequiredMinHeight(e, "landscape", numPics) // Fallback for 1 pic
 			}
 		case 2:
-			// For 2 pics, use the generic min height for estimation/pagination decision.
-			// The layout function itself will handle detailed placement later.
-			minRequiredHeightForPics = e.minImageHeight // Or maybe min(minLandscape, minPortrait)? Using generic for now.
+			// For 2 pics, use a generic minimum, maybe base portrait/landscape?
+			// The actual check happens later, this is just for pagination estimation.
+			// Let's use the *base* landscape height for pagination check when numPics=2
+			minRequiredHeightForPics = getRequiredMinHeight(e, "landscape", numPics)
 		default: // 3+ pics
-			// Use template estimation or a generic minimum for pagination decision.
-			minRequiredHeightForPics = e.minImageHeight // Using generic for now. Detailed height comes from template.
-			// Ideally, we'd use estimatePicturesHeight here, but that involves calculations.
-			// Let's stick to a simple minimum check for the pagination decision itself.
-			// estimatedHeight := e.estimatePicturesHeight(pictures) // Can be complex
+			// For pagination check for 3+ pics, let's use the base landscape height as a generic minimum guess.
+			// The actual detailed check happens in the layout functions.
+			minRequiredHeightForPics = getRequiredMinHeight(e, "landscape", numPics)
 		}
 
 		// Check if remaining space (after spacing) is less than the minimum needed
@@ -696,25 +768,127 @@ func (e *ContinuousLayoutEngine) processTemplatedLayoutAndPlace(pictures []Pictu
 		}
 		// If err was nil initially, or after force_new_page recalculation, flow continues...
 	case 7:
-		layoutInfo, err = e.calculateSevenPicturesLayout(pictures)
-		// TODO: Add split/force handling for 7 pictures (e.g., 3+4 or 4+3)
+		layoutInfo, err = e.calculateSevenPicturesLayout(pictures, layoutAvailableHeight)
+		// --- Special handling for 7-pic ---
+		if err != nil {
+			switch err.Error() {
+			case "force_new_page":
+				fmt.Println("Info: Forcing new page for 7-picture layout due to wide/tall images not fitting.")
+				e.newPage()
+				layoutAvailableHeight = (e.marginTop + e.availableHeight) - e.currentY // Recalculate for new page
+				// Retry calculation on the new page
+				layoutInfo, err = e.calculateSevenPicturesLayout(pictures, layoutAvailableHeight)
+				if err != nil {
+					fmt.Printf("Error calculating 7-pic layout even on new page: %v. Skipping.\n", err)
+					return 0
+				}
+				// If retry succeeds, err is nil, flow continues below
+
+			case "split_required":
+				fmt.Println("Info: Splitting 7-picture layout across pages (3+4).")
+				// Estimate minimum height for the first group (3 pictures)
+				minHeightForThree := e.minImageHeight // Using generic estimate
+				if layoutAvailableHeight < minHeightForThree {
+					fmt.Printf("Error: Not enough space (%.2f) for even the first three pictures (min %.2f est.) during 7-pic split. Skipping.\n", layoutAvailableHeight, minHeightForThree)
+					return 0
+				}
+				// Place first three pictures
+				heightUsed1 := e.processTemplatedLayoutAndPlace(pictures[0:3], layoutAvailableHeight)
+				if heightUsed1 <= 1e-6 {
+					fmt.Println("Error: Failed to place first three pictures during 7-pic split. Skipping rest.")
+					return 0
+				}
+				e.currentY += heightUsed1
+				// New page for the next four
+				e.newPage()
+				newLayoutAvailableHeight := (e.marginTop + e.availableHeight) - e.currentY
+				// Place last four pictures
+				heightUsed2 := e.processTemplatedLayoutAndPlace(pictures[3:7], newLayoutAvailableHeight)
+				if heightUsed2 <= 1e-6 {
+					fmt.Println("Error: Failed to place last four pictures during 7-pic split. First part placed, but operation incomplete.")
+					return 0
+				}
+				return heightUsed2 // Return height used on the *new* page
+
+			default:
+				fmt.Printf("Error calculating layout for 7 pictures: %v. Skipping placement.\n", err)
+				return 0
+			}
+		}
+		// If err was nil initially, or after force_new_page recalculation, flow continues...
 	case 8:
-		layoutInfo, err = e.calculateEightPicturesLayout(pictures)
-		// TODO: Add split/force handling for 8 pictures (e.g., 4+4)
-	case 9:
-		layoutInfo, err = e.calculateNinePicturesLayout(pictures)
-		// TODO: Add split/force handling for 9 pictures (e.g., 3+3+3 or 4+5)
+		layoutInfo, err = e.calculateEightPicturesLayout(pictures, layoutAvailableHeight)
+		// --- Special handling for 8-pic ---
+		if err != nil {
+			switch err.Error() {
+			case "force_new_page":
+				fmt.Println("Info: Forcing new page for 8-picture layout due to wide/tall images not fitting.")
+				e.newPage()
+				layoutAvailableHeight = (e.marginTop + e.availableHeight) - e.currentY // Recalculate
+				// Retry calculation on the new page
+				layoutInfo, err = e.calculateEightPicturesLayout(pictures, layoutAvailableHeight)
+				if err != nil {
+					fmt.Printf("Error calculating 8-pic layout even on new page: %v. Skipping.\n", err)
+					return 0
+				}
+				// If retry succeeds, err is nil, flow continues below
+
+			case "split_required":
+				fmt.Println("Info: Splitting 8-picture layout across pages (4+4).")
+				// Estimate minimum height for the first group (4 pictures)
+				minHeightForFour := e.minImageHeight // Generic estimate
+				if layoutAvailableHeight < minHeightForFour {
+					fmt.Printf("Error: Not enough space (%.2f) for even the first four pictures (min %.2f est.) during 8-pic split. Skipping.\n", layoutAvailableHeight, minHeightForFour)
+					return 0
+				}
+				// Place first four pictures
+				heightUsed1 := e.processTemplatedLayoutAndPlace(pictures[0:4], layoutAvailableHeight)
+				if heightUsed1 <= 1e-6 {
+					fmt.Println("Error: Failed to place first four pictures during 8-pic split. Skipping rest.")
+					return 0
+				}
+				e.currentY += heightUsed1
+				// New page for the next four
+				e.newPage()
+				newLayoutAvailableHeight := (e.marginTop + e.availableHeight) - e.currentY
+				// Place last four pictures
+				heightUsed2 := e.processTemplatedLayoutAndPlace(pictures[4:8], newLayoutAvailableHeight)
+				if heightUsed2 <= 1e-6 {
+					fmt.Println("Error: Failed to place last four pictures during 8-pic split. First part placed, but operation incomplete.")
+					return 0
+				}
+				return heightUsed2 // Return height used on the *new* page
+
+			default:
+				fmt.Printf("Error calculating layout for 8 pictures: %v. Skipping placement.\n", err)
+				return 0
+			}
+		}
+		// If err was nil initially, or after force_new_page recalculation, flow continues...
 	default:
-		err = fmt.Errorf("template layout not implemented for %d pictures", numPics)
+		// For > 8 pictures, we currently don't have specific layouts. Signal split.
+		fmt.Printf("Debug: No specific layout defined for %d pictures. Signaling split_required.\n", len(pictures))
+		// Set error so the common handler below signals split
+		err = fmt.Errorf("split_required") // Explicitly signal split
 	}
 
 	// --- Common Error Handling & Placement for Non-Split/Non-Force Cases ---
 	if err != nil {
-		// This handles errors from cases 3, 7, 8, 9 or default case,
+		// This handles errors from cases 3, 7, 8, default case,
 		// or calculation errors not caught by specific split/force handlers,
 		// or errors from the second calculation attempt after force_new_page.
-		fmt.Printf("Error calculating layout for %d pictures (final check): %v. Skipping placement.\n", numPics, err)
-		return 0
+		errStr := err.Error()
+		if errStr == "force_new_page" {
+			fmt.Printf("Debug: Received force_new_page signal for %d pics. Signaling caller.\n", numPics)
+			return -1.0 // Signal force_new_page
+		} else if errStr == "split_required" {
+			fmt.Printf("Debug: Received split_required signal for %d pics. Signaling caller.\n", numPics)
+			return -2.0 // Signal split_required
+		} else {
+			// Handle other calculation errors
+			fmt.Printf("Error calculating layout for %d pictures (final check): %v. Signaling split.\n", numPics, err)
+			return -2.0 // Treat other errors as split signal
+		}
 	}
 
 	// If we reach here, err is nil, and layoutInfo is valid for placement on the current page.
