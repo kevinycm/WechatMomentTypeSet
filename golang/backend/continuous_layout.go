@@ -485,7 +485,7 @@ func (e *ContinuousLayoutEngine) processPictures(pictures []Picture) {
 		actualHeightUsed = e.processSinglePictureLayoutAndPlace(pictures[0], layoutAvailableHeight)
 	case 2:
 		actualHeightUsed = e.processTwoPicturesLayoutAndPlace(pictures, layoutAvailableHeight)
-	default: // 3+ pictures
+	default:
 		actualHeightUsed = e.processTemplatedLayoutAndPlace(pictures, layoutAvailableHeight)
 	}
 
@@ -536,6 +536,7 @@ func (e *ContinuousLayoutEngine) processTemplatedLayoutAndPlace(pictures []Pictu
 	switch numPics {
 	case 3:
 		layoutInfo, err = e.calculateThreePicturesLayout(pictures, layoutAvailableHeight)
+		// No split/force logic needed for 3 pics as it's the base case for splits
 	case 4:
 		layoutInfo, err = e.calculateFourPicturesLayout(pictures, layoutAvailableHeight)
 		// --- Special handling for 4-pic ---
@@ -596,22 +597,75 @@ func (e *ContinuousLayoutEngine) processTemplatedLayoutAndPlace(pictures []Pictu
 		}
 		// If err was nil initially, or after force_new_page recalculation, flow continues...
 	case 5:
-		layoutInfo, err = e.calculateFivePicturesLayout(pictures)
+		layoutInfo, err = e.calculateFivePicturesLayout(pictures, layoutAvailableHeight)
+		// --- Special handling for 5-pic ---
+		if err != nil {
+			switch err.Error() {
+			case "force_new_page":
+				fmt.Println("Info: Forcing new page for 5-picture layout due to wide/tall images not fitting.")
+				e.newPage()
+				layoutAvailableHeight = (e.marginTop + e.availableHeight) - e.currentY // Recalculate for new page
+				// Retry calculation on the new page
+				layoutInfo, err = e.calculateFivePicturesLayout(pictures, layoutAvailableHeight)
+				if err != nil {
+					fmt.Printf("Error calculating 5-pic layout even on new page: %v. Skipping.\n", err)
+					return 0
+				}
+				// If retry succeeds, err is nil, flow continues below
+
+			case "split_required":
+				fmt.Println("Info: Splitting 5-picture layout across pages (3+2).")
+				// Estimate minimum height for the first group (3 pictures)
+				// Using minImageHeight as a basic check, more accurate would require partial calculation.
+				minHeightForThree := e.minImageHeight
+				if layoutAvailableHeight < minHeightForThree {
+					fmt.Printf("Error: Not enough space (%.2f) for even the first three pictures (min %.2f est.) during 5-pic split. Skipping.\n", layoutAvailableHeight, minHeightForThree)
+					return 0
+				}
+				// Place first three pictures - Recursive call to handle 3-pic case
+				heightUsed1 := e.processTemplatedLayoutAndPlace(pictures[0:3], layoutAvailableHeight)
+				if heightUsed1 <= 1e-6 {
+					fmt.Println("Error: Failed to place first three pictures during 5-pic split. Skipping rest.")
+					return 0
+				}
+				e.currentY += heightUsed1
+				// New page for the next two
+				e.newPage()
+				newLayoutAvailableHeight := (e.marginTop + e.availableHeight) - e.currentY
+				// Place last two pictures
+				heightUsed2 := e.processTwoPicturesLayoutAndPlace(pictures[3:5], newLayoutAvailableHeight)
+				if heightUsed2 <= 1e-6 {
+					fmt.Println("Error: Failed to place last two pictures during 5-pic split. First part placed, but operation incomplete.")
+					return 0
+				}
+				return heightUsed2 // Return height used on the *new* page
+
+			default:
+				fmt.Printf("Error calculating layout for 5 pictures: %v. Skipping placement.\n", err)
+				return 0
+			}
+		}
+		// If err was nil initially, or after force_new_page recalculation, flow continues...
 	case 6:
 		layoutInfo, err = e.calculateSixPicturesLayout(pictures)
+		// TODO: Add split/force handling for 6 pictures (e.g., 3+3 or 4+2)
 	case 7:
 		layoutInfo, err = e.calculateSevenPicturesLayout(pictures)
+		// TODO: Add split/force handling for 7 pictures (e.g., 3+4 or 4+3)
 	case 8:
 		layoutInfo, err = e.calculateEightPicturesLayout(pictures)
+		// TODO: Add split/force handling for 8 pictures (e.g., 4+4)
 	case 9:
 		layoutInfo, err = e.calculateNinePicturesLayout(pictures)
+		// TODO: Add split/force handling for 9 pictures (e.g., 3+3+3 or 4+5)
 	default:
 		err = fmt.Errorf("template layout not implemented for %d pictures", numPics)
 	}
 
 	// --- Common Error Handling & Placement for Non-Split/Non-Force Cases ---
 	if err != nil {
-		// This handles errors from cases 3, 5, 6... or default case,
+		// This handles errors from cases 3, 6, 7, 8, 9 or default case,
+		// or calculation errors not caught by specific split/force handlers,
 		// or errors from the second calculation attempt after force_new_page.
 		fmt.Printf("Error calculating layout for %d pictures (final check): %v. Skipping placement.\n", numPics, err)
 		return 0
@@ -998,110 +1052,6 @@ func (e *ContinuousLayoutEngine) calculateLayout_2T1B(ARs []float64, types []str
 		}
 	}
 	// No explicit min width check based on rules
-
-	return layout, meetsMin, nil
-}
-
-// --- Helper function for 2 Top, 3 Bottom Template ---
-func (e *ContinuousLayoutEngine) calculateLayout_2T3B(pictures []Picture, ARs []float64, AW, spacing, minH, minW float64) (TemplateLayout, bool, error) {
-	layout := TemplateLayout{
-		Positions:  make([][]float64, 5),
-		Dimensions: make([][]float64, 5),
-	}
-
-	// 使用pictures参数获取图片分组，因为calculateUniformRowHeightLayout需要Picture对象
-	row1Pics := pictures[0:2]
-	row2Pics := pictures[2:5]
-
-	widths1, _, height1 := e.calculateUniformRowHeightLayout(row1Pics, AW)
-	widths2, _, height2 := e.calculateUniformRowHeightLayout(row2Pics, AW)
-
-	if height1 <= 1e-6 || height2 <= 1e-6 {
-		return layout, false, fmt.Errorf("failed to calculate row layouts for 2T3B")
-	}
-	W0, W1 := widths1[0], widths1[1]
-	W2, W3, W4 := widths2[0], widths2[1], widths2[2]
-
-	// --- Check Minimums ---
-	meetsMin := true
-	if height1 < minH || height2 < minH {
-		meetsMin = false
-	}
-	if W0 < minW || W1 < minW || W2 < minW || W3 < minW || W4 < minW {
-		meetsMin = false
-	}
-
-	// --- Populate Layout Struct ---
-	layout.TotalHeight = height1 + spacing + height2
-	layout.TotalWidth = AW
-	// Row 1
-	layout.Positions[0] = []float64{0, 0}
-	layout.Dimensions[0] = []float64{W0, height1}
-	layout.Positions[1] = []float64{W0 + spacing, 0}
-	layout.Dimensions[1] = []float64{W1, height1}
-	// Row 2
-	currentX := 0.0
-	layout.Positions[2] = []float64{currentX, height1 + spacing}
-	layout.Dimensions[2] = []float64{W2, height2}
-	currentX += W2 + spacing
-	layout.Positions[3] = []float64{currentX, height1 + spacing}
-	layout.Dimensions[3] = []float64{W3, height2}
-	currentX += W3 + spacing
-	layout.Positions[4] = []float64{currentX, height1 + spacing}
-	layout.Dimensions[4] = []float64{W4, height2}
-
-	return layout, meetsMin, nil
-}
-
-// --- Helper function for 3 Top, 2 Bottom Template ---
-func (e *ContinuousLayoutEngine) calculateLayout_3T2B(pictures []Picture, ARs []float64, AW, spacing, minH, minW float64) (TemplateLayout, bool, error) {
-	layout := TemplateLayout{
-		Positions:  make([][]float64, 5),
-		Dimensions: make([][]float64, 5),
-	}
-
-	// 使用pictures参数获取图片分组，因为calculateUniformRowHeightLayout需要Picture对象
-	row1Pics := pictures[0:3]
-	row2Pics := pictures[3:5]
-
-	widths1, _, height1 := e.calculateUniformRowHeightLayout(row1Pics, AW)
-	widths2, _, height2 := e.calculateUniformRowHeightLayout(row2Pics, AW)
-
-	if height1 <= 1e-6 || height2 <= 1e-6 {
-		return layout, false, fmt.Errorf("failed to calculate row layouts for 3T2B")
-	}
-	W0, W1, W2 := widths1[0], widths1[1], widths1[2]
-	W3, W4 := widths2[0], widths2[1]
-
-	// --- Check Minimums ---
-	meetsMin := true
-	if height1 < minH || height2 < minH {
-		meetsMin = false
-	}
-	if W0 < minW || W1 < minW || W2 < minW || W3 < minW || W4 < minW {
-		meetsMin = false
-	}
-
-	// --- Populate Layout Struct ---
-	layout.TotalHeight = height1 + spacing + height2
-	layout.TotalWidth = AW
-	// Row 1
-	currentX := 0.0
-	layout.Positions[0] = []float64{currentX, 0}
-	layout.Dimensions[0] = []float64{W0, height1}
-	currentX += W0 + spacing
-	layout.Positions[1] = []float64{currentX, 0}
-	layout.Dimensions[1] = []float64{W1, height1}
-	currentX += W1 + spacing
-	layout.Positions[2] = []float64{currentX, 0}
-	layout.Dimensions[2] = []float64{W2, height1}
-	// Row 2
-	currentX = 0.0
-	layout.Positions[3] = []float64{currentX, height1 + spacing}
-	layout.Dimensions[3] = []float64{W3, height2}
-	currentX += W3 + spacing
-	layout.Positions[4] = []float64{currentX, height1 + spacing}
-	layout.Dimensions[4] = []float64{W4, height2}
 
 	return layout, meetsMin, nil
 }
