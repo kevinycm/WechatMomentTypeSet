@@ -95,8 +95,8 @@ func NewContinuousLayoutEngine(entries []Entry) *ContinuousLayoutEngine {
 		imageSpacing:       15,    // 图片之间的间距
 		minWideHeight:      400,   // Min height for Wide pics (AR >= 3)
 		minTallHeight:      600,   // Min height for Tall pics (AR <= 1/3)
-		minLandscapeHeight: 600,   // Min height for Landscape pics (1 < AR < 3)
-		minPortraitHeight:  800,   // Min height for Portrait pics (1/3 < AR < 1)
+		minLandscapeHeight: 400,   // Min height for Landscape pics (1 < AR < 3)
+		minPortraitHeight:  600,   // Min height for Portrait pics (1/3 < AR < 1)
 		singleImageHeight:  2808,  // 设置单张竖图的默认高度
 		singleImageWidth:   1695,  // 设置单张横图的默认宽度
 		minImageHeight:     800,   // 设置单张竖图的最小展示高度
@@ -537,7 +537,64 @@ func (e *ContinuousLayoutEngine) processTemplatedLayoutAndPlace(pictures []Pictu
 	case 3:
 		layoutInfo, err = e.calculateThreePicturesLayout(pictures, layoutAvailableHeight)
 	case 4:
-		layoutInfo, err = e.calculateFourPicturesLayout(pictures)
+		layoutInfo, err = e.calculateFourPicturesLayout(pictures, layoutAvailableHeight)
+		// --- Special handling for 4-pic ---
+		if err != nil {
+			switch err.Error() {
+			case "force_new_page":
+				fmt.Println("Info: Forcing new page for 4-picture layout due to wide/tall images not fitting.")
+				e.newPage()
+				layoutAvailableHeight = (e.marginTop + e.availableHeight) - e.currentY // Recalculate for new page
+				// Retry calculation on the new page
+				layoutInfo, err = e.calculateFourPicturesLayout(pictures, layoutAvailableHeight)
+				if err != nil {
+					// If it still fails (e.g., split required even on a full page, or other calc error)
+					fmt.Printf("Error calculating 4-pic layout even on new page: %v. Skipping.\n", err)
+					// We can't proceed with placement if the calculation failed on the new page
+					return 0
+				}
+				// If calculation on new page succeeded, err is now nil,
+				// and flow will continue to the common placement logic below the switch.
+
+			case "split_required":
+				fmt.Println("Info: Splitting 4-picture layout across pages.")
+				// Check if there's enough space for even the first two using 2-pic logic's minimums
+				minHeightForTwo := e.minImageHeight // Use the generic min height for 2-pic check
+				if layoutAvailableHeight < minHeightForTwo {
+					fmt.Printf("Error: Not enough space (%.2f) for even the first two pictures (min %.2f) during split. Skipping.\n", layoutAvailableHeight, minHeightForTwo)
+					return 0 // Cannot place even the first part
+				}
+
+				// Place first two pictures
+				heightUsed1 := e.processTwoPicturesLayoutAndPlace(pictures[0:2], layoutAvailableHeight)
+				if heightUsed1 <= 1e-6 { // Check if first placement failed
+					fmt.Println("Error: Failed to place first two pictures during split. Skipping rest.")
+					return 0
+				}
+				e.currentY += heightUsed1 // Update Y after first successful placement
+
+				// Start a new page for the next two
+				e.newPage()
+				newLayoutAvailableHeight := (e.marginTop + e.availableHeight) - e.currentY
+
+				// Place last two pictures on the new page
+				heightUsed2 := e.processTwoPicturesLayoutAndPlace(pictures[2:4], newLayoutAvailableHeight)
+				if heightUsed2 <= 1e-6 { // Check if second placement failed
+					fmt.Println("Error: Failed to place last two pictures during split. First part placed, but operation incomplete.")
+					// Return 0 height used for *this call* because the second part failed.
+					return 0
+				}
+				// If second placement succeeds, return the height used by the second part.
+				// The caller (processPictures) will add this heightUsed2 to the new page's currentY.
+				return heightUsed2 // Return immediately after successful split placement
+
+			default:
+				// Handle other calculation errors (not split_required or force_new_page)
+				fmt.Printf("Error calculating layout for 4 pictures: %v. Skipping placement.\n", err)
+				return 0 // Return immediately as we cannot place
+			}
+		}
+		// If err was nil initially, or after force_new_page recalculation, flow continues...
 	case 5:
 		layoutInfo, err = e.calculateFivePicturesLayout(pictures)
 	case 6:
@@ -552,33 +609,17 @@ func (e *ContinuousLayoutEngine) processTemplatedLayoutAndPlace(pictures []Pictu
 		err = fmt.Errorf("template layout not implemented for %d pictures", numPics)
 	}
 
+	// --- Common Error Handling & Placement for Non-Split/Non-Force Cases ---
 	if err != nil {
-		fmt.Printf("Error calculating layout for %d pictures: %v. Skipping placement.\n", numPics, err)
-		return 0 // Return 0 height if layout failed
+		// This handles errors from cases 3, 5, 6... or default case,
+		// or errors from the second calculation attempt after force_new_page.
+		fmt.Printf("Error calculating layout for %d pictures (final check): %v. Skipping placement.\n", numPics, err)
+		return 0
 	}
 
-	// --- Scale Layout if Needed ---
-	finalLayoutHeight := layoutInfo.TotalHeight
-	if finalLayoutHeight > layoutAvailableHeight {
-		// log.Printf("Info: Template layout height %f exceeds available %f. Scaling.", finalLayoutHeight, layoutAvailableHeight)
-		scale := layoutAvailableHeight / finalLayoutHeight
-		// Scale dimensions and positions within the layoutInfo
-		layoutInfo.TotalHeight *= scale
-		for i := range layoutInfo.Positions {
-			layoutInfo.Positions[i][0] *= scale  // Scale X position
-			layoutInfo.Positions[i][1] *= scale  // Scale Y position
-			layoutInfo.Dimensions[i][0] *= scale // Scale Width
-			layoutInfo.Dimensions[i][1] *= scale // Scale Height
-		}
-		finalLayoutHeight = layoutInfo.TotalHeight // Update final height
-		// TODO: We might need to re-check minimum dimensions after scaling, though it might be complex.
-	}
-
-	// --- Place Pictures using Template ---
-	// Note: Spacing was handled by the caller (processPictures)
+	// If we reach here, err is nil, and layoutInfo is valid for placement on the current page.
 	e.placePicturesInTemplate(pictures, layoutInfo)
-
-	return finalLayoutHeight // Return the actual height used for placement
+	return layoutInfo.TotalHeight
 }
 
 // TemplateLayout holds the calculated positions and dimensions for a template
