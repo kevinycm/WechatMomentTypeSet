@@ -1,4 +1,4 @@
-package backend
+package calculate
 
 import (
 	"fmt"
@@ -51,8 +51,8 @@ func (e *ContinuousLayoutEngine) processTwoPicturesLayoutAndPlace(pictures []Pic
 		return finalHeight
 	}
 
-	type1 := getPictureType(ar1)
-	type2 := getPictureType(ar2)
+	type1 := GetPictureType(ar1)
+	type2 := GetPictureType(ar2)
 
 	finalTotalHeight := 0.0
 

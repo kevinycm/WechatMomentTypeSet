@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"wechatmomenttypeset/backend/calculate"
 )
 
 // Server represents the HTTP server
@@ -97,13 +98,6 @@ func (s *Server) handleLayout(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// Entry represents a single moment entry with time, text and pictures
-type Entry struct {
-	Time     string    `json:"time"`
-	Text     string    `json:"text"`
-	Pictures []Picture `json:"pictures"`
-}
-
 // formatTime converts time string from "2025-03-20 12:30:15" to "2025年3月20日 12:30"
 func formatTime(timeStr string) string {
 	t, err := time.Parse("2006-01-02 15:04:05", timeStr)
@@ -130,16 +124,16 @@ func (s *Server) handleContinuousLayoutSample(w http.ResponseWriter, r *http.Req
 	}
 
 	// Convert TestCase to Entry
-	var entries []Entry
+	var entries []calculate.Entry
 	for _, testCase := range SampleData {
-		entries = append(entries, Entry{
+		entries = append(entries, calculate.Entry{
 			Time:     testCase.Time,
 			Text:     testCase.Text,
 			Pictures: testCase.Pictures,
 		})
 	}
 
-	engine := NewContinuousLayoutEngine(entries)
+	engine := calculate.NewContinuousLayoutEngine(entries)
 	pages, err := engine.ProcessEntries()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -181,7 +175,7 @@ func (s *Server) handleContinuousLayoutReal(w http.ResponseWriter, r *http.Reque
 	})
 
 	// 按年月分组
-	yearMonthGroups := make(map[string][]Entry)
+	yearMonthGroups := make(map[string][]calculate.Entry)
 	yearMonthKeys := make([]string, 0)
 	for _, id := range ids {
 		testCase := RealData[id]
@@ -194,7 +188,7 @@ func (s *Server) handleContinuousLayoutReal(w http.ResponseWriter, r *http.Reque
 			yearMonthKeys = append(yearMonthKeys, yearMonthKey)
 		}
 
-		entry := Entry{
+		entry := calculate.Entry{
 			Time:     formatTime(testCase.Time),
 			Text:     testCase.Text,
 			Pictures: testCase.Pictures,
@@ -206,7 +200,7 @@ func (s *Server) handleContinuousLayoutReal(w http.ResponseWriter, r *http.Reque
 	sort.Sort(sort.Reverse(sort.StringSlice(yearMonthKeys)))
 
 	// 处理每个年月组的数据
-	var allPages []ContinuousLayoutPage
+	var allPages []calculate.ContinuousLayoutPage
 	pageNumber := 1
 
 	for _, yearMonthKey := range yearMonthKeys {
@@ -224,17 +218,17 @@ func (s *Server) handleContinuousLayoutReal(w http.ResponseWriter, r *http.Reque
 		month, _ := strconv.Atoi(parts[1])
 		yearMonth := fmt.Sprintf("%d年%d月", year, month)
 
-		insertPage := ContinuousLayoutPage{
+		insertPage := calculate.ContinuousLayoutPage{
 			Page:      pageNumber,
 			IsInsert:  true,
 			YearMonth: yearMonth,
-			Entries:   []PageEntry{},
+			Entries:   []calculate.PageEntry{},
 		}
 		allPages = append(allPages, insertPage)
 		pageNumber++
 
 		// 处理该年月的条目
-		engine := NewContinuousLayoutEngine(entries)
+		engine := calculate.NewContinuousLayoutEngine(entries)
 		pages, err := engine.ProcessEntries()
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -279,7 +273,7 @@ func convertAreaTo72DPI(area [][]float64) [][]float64 {
 }
 
 // convertPageTo72DPI converts all coordinates in a page from 300DPI to 72DPI
-func convertPageTo72DPI(page ContinuousLayoutPage) ContinuousLayoutPage {
+func convertPageTo72DPI(page calculate.ContinuousLayoutPage) calculate.ContinuousLayoutPage {
 	// 不要转换页码，保持原样
 	// page.Page = int(convertTo72DPI(float64(page.Page)))
 

@@ -6,6 +6,7 @@ import (
 	"log"
 	"strings"
 	"time"
+	"wechatmomenttypeset/backend/calculate"
 
 	_ "github.com/go-sql-driver/mysql"
 )
@@ -50,7 +51,10 @@ func InitRealData(dsn string) error {
 		AND type = 1
 		AND media_infos IS NOT NULL 
 		AND qiniu_media_urls IS NOT NULL
-		AND (LENGTH(qiniu_media_urls) - LENGTH(REPLACE(qiniu_media_urls, ',', '')) + 1) / 2 = 8
+		AND (LENGTH(qiniu_media_urls) - LENGTH(REPLACE(qiniu_media_urls, ',', '')) + 1) / 2 = 9
+		-- AND DATE(release_time) >= '2025-01-01'
+		-- AND DATE(release_time) <= '2024-10-21'
+		AND DATE(release_time) = '2017-09-16'
 		ORDER BY release_time DESC
 	`)
 
@@ -113,7 +117,7 @@ func InitRealData(dsn string) error {
 }
 
 // processPictureInfo converts media_infos and qiniu_media_urls into Picture slice
-func processPictureInfo(mediaInfos, qiniuMediaURLs string) ([]Picture, error) {
+func processPictureInfo(mediaInfos, qiniuMediaURLs string) ([]calculate.Picture, error) {
 	log.Printf("Processing picture info: mediaInfos='%s', qiniuMediaURLs='%s'", mediaInfos, qiniuMediaURLs)
 	if mediaInfos == "" || qiniuMediaURLs == "" {
 		log.Println(" MediaInfos or QiniuMediaURLs is empty, returning nil.")
@@ -137,7 +141,7 @@ func processPictureInfo(mediaInfos, qiniuMediaURLs string) ([]Picture, error) {
 		// Continue processing, but might result in fewer pictures than dimensions
 	}
 
-	var pictures []Picture
+	var pictures []calculate.Picture
 	numPics := len(dimensions) / 2
 	log.Printf(" Expected number of pictures based on dimensions: %d", numPics)
 
@@ -179,7 +183,7 @@ func processPictureInfo(mediaInfos, qiniuMediaURLs string) ([]Picture, error) {
 		}
 
 		// Create Picture entry
-		picture := Picture{
+		picture := calculate.Picture{
 			Index:  i,
 			Width:  width,
 			Height: height,

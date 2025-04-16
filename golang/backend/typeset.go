@@ -6,6 +6,7 @@ import (
 	"math"
 	"strings"
 	"unicode/utf8"
+	"wechatmomenttypeset/backend/calculate"
 )
 
 // Component represents a basic component in the layout
@@ -301,29 +302,20 @@ type LayoutEngine struct {
 
 // Page represents a page in the layout
 type Page struct {
-	Page      int           `json:"page"`
-	TimeArea  [][]float64   `json:"time_area"`
-	Time      string        `json:"time"`
-	TextAreas [][][]float64 `json:"text_areas"`
-	Texts     []string      `json:"texts"`
-	Pictures  []Picture     `json:"pictures"`
-}
-
-// Picture represents a picture in the layout
-type Picture struct {
-	Index  int         `json:"index"`
-	Area   [][]float64 `json:"area"`
-	URL    string      `json:"url"`
-	Width  int         `json:"width"`
-	Height int         `json:"height"`
+	Page      int                 `json:"page"`
+	TimeArea  [][]float64         `json:"time_area"`
+	Time      string              `json:"time"`
+	TextAreas [][][]float64       `json:"text_areas"`
+	Texts     []string            `json:"texts"`
+	Pictures  []calculate.Picture `json:"pictures"`
 }
 
 // TestCase represents a test case
 type TestCase struct {
-	ID       int       `json:"id"`
-	Time     string    `json:"time"`
-	Text     string    `json:"text"`
-	Pictures []Picture `json:"pictures"`
+	ID       int                 `json:"id"`
+	Time     string              `json:"time"`
+	Text     string              `json:"text"`
+	Pictures []calculate.Picture `json:"pictures"`
 }
 
 // NewLayoutEngine creates a new layout engine
@@ -357,7 +349,7 @@ func (e *LayoutEngine) newPage() {
 		Page:      len(e.pages) + 1,
 		TextAreas: make([][][]float64, 0),
 		Texts:     make([]string, 0),
-		Pictures:  make([]Picture, 0),
+		Pictures:  make([]calculate.Picture, 0),
 	}
 	e.pages = append(e.pages, *page)
 	e.currentPage = &e.pages[len(e.pages)-1]
@@ -458,7 +450,7 @@ func (e *LayoutEngine) addTextChunk(chunk []string) {
 	e.currentY += textHeight
 }
 
-func (e *LayoutEngine) processPictures(pictures []Picture) {
+func (e *LayoutEngine) processPictures(pictures []calculate.Picture) {
 	layout := e.getLayout(len(pictures))
 	currentIdx := 0
 	for _, row := range layout {
@@ -487,7 +479,7 @@ func (e *LayoutEngine) getLayout(n int) []int {
 	return layoutRules[n]
 }
 
-func (e *LayoutEngine) processPictureRow(rowPics []Picture) {
+func (e *LayoutEngine) processPictureRow(rowPics []calculate.Picture) {
 	for {
 		availableHeight := e.availableHeight - (e.currentY - e.marginTop)
 		if availableHeight <= 0 {
@@ -539,7 +531,7 @@ func (e *LayoutEngine) processPictureRow(rowPics []Picture) {
 	}
 }
 
-func (e *LayoutEngine) placePictures(rowPics []Picture, scaledWidths []float64, commonHeight float64) {
+func (e *LayoutEngine) placePictures(rowPics []calculate.Picture, scaledWidths []float64, commonHeight float64) {
 	startY := e.currentY
 	x := e.marginLeft
 	for i, pic := range rowPics {
@@ -547,7 +539,7 @@ func (e *LayoutEngine) placePictures(rowPics []Picture, scaledWidths []float64, 
 			{x, startY},
 			{x + scaledWidths[i], startY + commonHeight},
 		}
-		e.currentPage.Pictures = append(e.currentPage.Pictures, Picture{
+		e.currentPage.Pictures = append(e.currentPage.Pictures, calculate.Picture{
 			Index: i + 1,
 			Area:  area,
 			URL:   pic.URL,

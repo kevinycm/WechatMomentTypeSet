@@ -1,4 +1,4 @@
-package backend
+package calculate
 
 import (
 	"fmt"
@@ -22,7 +22,7 @@ func (e *ContinuousLayoutEngine) processSinglePictureLayoutAndPlace(picture Pict
 		// Attempt to use a default size based on generic min height?
 	}
 
-	picType := getPictureType(aspectRatio)
+	picType := GetPictureType(aspectRatio)
 
 	finalWidth := 0.0
 	finalHeight := 0.0
