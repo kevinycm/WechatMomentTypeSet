@@ -52,9 +52,12 @@ func InitRealData(dsn string) error {
 		AND media_infos IS NOT NULL 
 		AND qiniu_media_urls IS NOT NULL
 		AND (LENGTH(qiniu_media_urls) - LENGTH(REPLACE(qiniu_media_urls, ',', '')) + 1) / 2 = 9
-		-- AND DATE(release_time) >= '2025-01-01'
+		-- AND DATE(release_time) = '2025-03-09'
 		-- AND DATE(release_time) <= '2024-10-21'
-		AND DATE(release_time) = '2017-09-16'
+		-- AND DATE(release_time) = '2022-04-21'
+		-- AND DATE(release_time) = '2024-11-17'
+		-- AND DATE(release_time) = '2015-08-19'
+		-- AND DATE(release_time) = '2020-05-27'
 		ORDER BY release_time DESC
 	`)
 

@@ -32,9 +32,14 @@ func (e *ContinuousLayoutEngine) processTwoPicturesLayoutAndPlace(pictures []Pic
 		fmt.Printf("Warning: Using fallback layout for 2 pictures due to invalid AR or no available height.\n")
 		// Fallback to simple left/right layout with min height, scaled if needed
 		widths, _, rowHeight := e.calculateUniformRowHeightLayout(pictures, e.availableWidth)
-		if rowHeight < e.minImageHeight { // Ensure minimum height in fallback
-			rowHeight = e.minImageHeight
+
+		// Determine the stricter (smaller) minimum height required for 2 pics as fallback threshold
+		minRequiredFallbackHeight := math.Min(e.minLandscapeHeights[2], e.minPortraitHeights[2])
+
+		if rowHeight < minRequiredFallbackHeight { // Ensure minimum height in fallback
+			rowHeight = minRequiredFallbackHeight
 			// Recalculate widths based on forced min height (might exceed available width)
+			// Note: This assumes ar1 and ar2 have default values (1.0) if original ARs were invalid.
 			widths[0] = rowHeight * ar1
 			widths[1] = rowHeight * ar2
 			// This fallback doesn't rescale width perfectly, it prioritizes min height.

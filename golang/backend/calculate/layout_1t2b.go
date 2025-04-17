@@ -56,6 +56,11 @@ func (e *ContinuousLayoutEngine) calculateLayout_1T2B(ARs []float64, types []str
 	// heights := []float64{H0, H_bottom, H_bottom} // Heights for pics 0, 1, 2 respectively - Not strictly needed for check logic
 	requiredMinHeights := make([]float64, 3)
 	for i, picType := range types {
+		// Use the GetRequiredMinHeight helper function
+		requiredMinHeight := GetRequiredMinHeight(e, picType, 3)
+		requiredMinHeights[i] = requiredMinHeight // Store it (might be redundant)
+
+		/* // Old switch logic removed
 		switch picType {
 		case "wide":
 			requiredMinHeights[i] = e.minWideHeight
@@ -68,6 +73,7 @@ func (e *ContinuousLayoutEngine) calculateLayout_1T2B(ARs []float64, types []str
 		default:
 			requiredMinHeights[i] = e.minLandscapeHeight // Fallback
 		}
+		*/
 		// Use correct height for check (H0 for pic 0, H_bottom for pics 1 & 2)
 		checkHeight := H0
 		if i > 0 {

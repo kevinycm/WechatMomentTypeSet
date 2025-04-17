@@ -134,22 +134,17 @@ func (e *ContinuousLayoutEngine) calculateThreePicturesLayout(pictures []Picture
 		fmt.Printf("Debug (3-Pic): Layout %s - Checking minimum heights after scaling...\n", name)
 		// +++ End Log +++
 		for i, picType := range types {
-			switch picType {
-			case "wide":
-				requiredMinHeights[i] = e.minWideHeight
-			case "tall":
-				requiredMinHeights[i] = e.minTallHeight
-			case "landscape":
-				requiredMinHeights[i] = e.minLandscapeHeight
-			case "portrait":
-				requiredMinHeights[i] = e.minPortraitHeight
-			default:
-				requiredMinHeights[i] = e.minLandscapeHeight // Fallback
-			}
+			// Use the GetRequiredMinHeight helper function which now handles the new slices
+			// Pass numPics = 3 as this function calculates layouts for 3 pictures.
+			requiredMinHeight := GetRequiredMinHeight(e, picType, 3)
+			// Note: The requiredMinHeights slice might not be strictly necessary anymore
+			// if the check happens right after getting the value, but we keep it for now
+			// in case it's used elsewhere in the loop's logic (it isn't currently).
+			requiredMinHeights[i] = requiredMinHeight // Store it in the slice (though maybe redundant now)
 
 			if i < len(layout.Dimensions) && len(layout.Dimensions[i]) == 2 {
 				actualHeight := layout.Dimensions[i][1]
-				requiredMinHeight := GetRequiredMinHeight(e, picType, 3) // Pass numPics=3
+				// requiredMinHeight is already fetched above
 				// +++ Log Individual Min Height Check +++
 				fmt.Printf("Debug (3-Pic): Layout %s - Pic %d (%s): Actual H = %.2f, Required Min H = %.2f\n", name, picIndices[i], picType, actualHeight, requiredMinHeight)
 				// +++ End Log +++
@@ -187,8 +182,6 @@ func (e *ContinuousLayoutEngine) calculateThreePicturesLayout(pictures []Picture
 			}
 			layoutAreas[name] = totalArea
 			fmt.Printf("Debug (3-Pic): Layout %s - VALID. Scale: %.2f, Area: %.2f\n", name, scale, totalArea)
-		} else {
-			fmt.Printf("Debug (3-Pic): Layout %s - INVALID (Min Height Fail). Scale: %.2f, ViolationFactor: %.2f\n", name, scale, maxViolationFactor)
 		}
 	}
 
@@ -206,75 +199,34 @@ func (e *ContinuousLayoutEngine) calculateThreePicturesLayout(pictures []Picture
 				bestLayoutName = name
 			}
 		}
-		fmt.Printf("Debug (3-Pic): Selected best strictly valid layout: %s (Area: %.2f)\n", bestLayoutName, maxArea)
-		return validLayouts[bestLayoutName], nil
-	} else if len(scaledLayouts) > 0 {
-		// Strategy 2: No layout met strict minimums, fallback logic
+		fmt.Printf("Debug (3-Pic): Selected best VALID layout: %s (Area: %.2f)\n", bestLayoutName, maxArea)
+		return validLayouts[bestLayoutName], nil // Return the best valid layout
+	} else {
+		// Strategy 2: NO layout strictly met the minimum height requirements.
+		// Return a specific error indicating this failure.
+		fmt.Printf("Error (3-Pic): No layout found that satisfies minimum height requirements after scaling. Signaling error.\n")
+
+		// Log the best potential fallback for debugging, but return error
 		bestFallbackName := ""
 		minViolationFactor := math.Inf(1)
-
-		// Prioritize non-vertical layouts first
-		preferredLayouts := []string{"1L2R", "2L1R", "1T2B", "2T1B", "3Row"}
-		foundPreferredFallback := false
-
-		for _, name := range preferredLayouts {
-			if factor, exists := layoutViolationFactors[name]; exists {
-				if factor < minViolationFactor {
-					minViolationFactor = factor
-					bestFallbackName = name
-					foundPreferredFallback = true
-				}
+		for name, factor := range layoutViolationFactors {
+			// Ensure factor is positive before comparing
+			if factor > 0 && factor < minViolationFactor {
+				minViolationFactor = factor
+				bestFallbackName = name
 			}
 		}
-
-		// If no preferred layout was viable (or only 3Col existed), consider 3Col
-		if !foundPreferredFallback || minViolationFactor == math.Inf(1) {
-			if factor3Col, exists3Col := layoutViolationFactors["3Col"]; exists3Col {
-				// Only choose 3Col if it's better than the best preferred OR if no preferred was found
-				if !foundPreferredFallback || factor3Col < minViolationFactor {
-					// Check if 3Col itself is viable (factor is not infinite)
-					if factor3Col != math.Inf(1) {
-						minViolationFactor = factor3Col
-						bestFallbackName = "3Col"
-					}
-				}
-			}
-		}
-
-		// --- 修改点：增加阈值判断 ---
-		const fallbackViolationThreshold = 2.0 // 允许的最大违反因子 (例如，允许实际高度是要求的 1/2)
-
-		if bestFallbackName != "" && minViolationFactor <= fallbackViolationThreshold {
-			// 只有当最佳备选存在，并且违反程度在可接受范围内时，才返回备选布局
-			fmt.Printf("Warning (3-Pic): No standard layout was valid. Using fallback layout '%s' (ViolationFactor: %.2f <= Threshold: %.2f).\n", bestFallbackName, minViolationFactor, fallbackViolationThreshold)
-			return scaledLayouts[bestFallbackName], nil
+		if bestFallbackName != "" {
+			fmt.Printf("Debug (3-Pic): Best potential fallback (NOT USED) was: %s (Violation Factor: %.2f)\n", bestFallbackName, minViolationFactor)
 		} else {
-			// 备选失败：要么没找到备选，要么违反程度过高
-			errMsg := "No valid 3-picture layout met minimum dimensions, and fallback selection failed"
-			if bestFallbackName != "" { // 如果是因为违反程度过高而失败
-				errMsg = fmt.Sprintf("%s (best fallback '%s' had violation factor %.2f > threshold %.2f)", errMsg, bestFallbackName, minViolationFactor, fallbackViolationThreshold)
-			} else { // 如果是没找到任何备选（可能所有布局计算都出错）
-				errMsg = fmt.Sprintf("%s (no fallback candidate found)", errMsg)
-			}
-
+			fmt.Println("Debug (3-Pic): No potential fallback layout found either (or all calcs failed or factors invalid). Skipping further calculation errors.")
+			// If no fallback was even calculable, return the first calc error if exists
 			if firstCalcError != nil {
-				errMsg = fmt.Sprintf("%s. First calculation error: %v", errMsg, firstCalcError)
+				return TemplateLayout{}, fmt.Errorf("all layout calculations failed: %w", firstCalcError)
 			}
-			// +++ Log Fallback Failure +++
-			fmt.Printf("Error (3-Pic): %s\n", errMsg)
-			// +++ End Log +++
-			return TemplateLayout{}, fmt.Errorf("%s", errMsg) // 返回错误
 		}
 
-	} else {
-		// Strategy 3: No layouts could even be calculated initially
-		errMsg := "No 3-picture layout could be calculated."
-		if firstCalcError != nil {
-			errMsg = fmt.Sprintf("%s First calculation error: %v", errMsg, firstCalcError)
-		}
-		// +++ Log Initial Calc Failure +++
-		fmt.Printf("Error (3-Pic): %s\n", errMsg)
-		// +++ End Log +++
-		return TemplateLayout{}, fmt.Errorf("%s", errMsg)
+		// Return specific error for minimum height failure
+		return TemplateLayout{}, fmt.Errorf("no layout satisfied minimum height requirements for 3 pictures")
 	}
 }

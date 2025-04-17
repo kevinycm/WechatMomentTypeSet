@@ -30,8 +30,8 @@ func (e *ContinuousLayoutEngine) processSinglePictureLayoutAndPlace(picture Pict
 	// Handle invalid AR or zero available height with a fallback
 	if !validAR || layoutAvailableHeight <= 1e-6 {
 		fmt.Printf("Warning: Using fallback dimensions for Pic %d due to invalid AR or no available height.\n", picture.Index)
-		// Use a reasonable fallback, e.g., min landscape height capped by available height
-		finalHeight = math.Min(e.minLandscapeHeight, layoutAvailableHeight)
+		// Use min landscape height for 1 picture as fallback, capped by available height
+		finalHeight = math.Min(e.minLandscapeHeights[1], layoutAvailableHeight)
 		if finalHeight < 1.0 {
 			finalHeight = 1.0
 		} // Ensure positive height

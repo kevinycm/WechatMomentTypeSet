@@ -58,18 +58,10 @@ func (e *ContinuousLayoutEngine) calculateLayout_1L2R(ARs []float64, types []str
 	heights := []float64{H0, H1, H2} // Heights for pics 0, 1, 2
 	requiredMinHeights := make([]float64, 3)
 	for i, picType := range types {
-		switch picType {
-		case "wide":
-			requiredMinHeights[i] = e.minWideHeight
-		case "tall":
-			requiredMinHeights[i] = e.minTallHeight
-		case "landscape":
-			requiredMinHeights[i] = e.minLandscapeHeight
-		case "portrait":
-			requiredMinHeights[i] = e.minPortraitHeight
-		default:
-			requiredMinHeights[i] = e.minLandscapeHeight // Fallback
-		}
+		// Use the GetRequiredMinHeight helper function
+		requiredMinHeight := GetRequiredMinHeight(e, picType, 3)
+		requiredMinHeights[i] = requiredMinHeight // Store it (might be redundant)
+
 		if heights[i] < requiredMinHeights[i] {
 			meetsMin = false
 			break

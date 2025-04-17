@@ -1,6 +1,7 @@
 package calculate
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"strings"
@@ -12,30 +13,26 @@ import (
 // UPDATED TO INITIALIZE NEW FIELDS
 func NewContinuousLayoutEngine(entries []Entry) *ContinuousLayoutEngine {
 	engine := &ContinuousLayoutEngine{
-		entries:                          entries,
-		marginLeft:                       142,
-		marginRight:                      142,
-		marginTop:                        189,
-		marginBottom:                     189,
-		timeHeight:                       100,
-		fontSize:                         66.67, // 对应72DPI的16px
-		lineHeight:                       100,   // 对应72DPI的24px
-		entrySpacing:                     150,   // 条目之间的间距
-		elementSpacing:                   30,    // 元素整体之间的间距
-		imageSpacing:                     15,    // 图片之间的间距
-		minWideHeight:                    600,   // Min height for Wide pics (AR >= 3)
-		minTallHeight:                    800,   // Min height for Tall pics (AR <= 1/3)
-		minLandscapeHeight:               600,   // Base Min height for Landscape (for < 5 pics)
-		minPortraitHeight:                600,   // Base Min height for Portrait (for < 5 pics)
-		minLandscapeHeightLargeGroup:     600,   // Min height Landscape (5-7 pics)
-		minPortraitHeightLargeGroup:      800,   // Min height Portrait (5-7 pics)
-		minLandscapeHeightVeryLargeGroup: 450,   // Added: Min height Landscape (>= 8 pics) - Lower value
-		minPortraitHeightVeryLargeGroup:  900,   // Added: Min height Portrait (>= 8 pics) - Lower value
-		singleImageHeight:                2808,  // 设置单张竖图的默认高度
-		singleImageWidth:                 1695,  // 设置单张横图的默认宽度
-		minImageHeight:                   800,   // 设置单张竖图的最小展示高度
-		minImageWidth:                    1200,  // 设置单张横图的最小展示宽度
-		bottomMargin:                     100,   // 底部边距
+		entries:        entries,
+		marginLeft:     142,
+		marginRight:    142,
+		marginTop:      189,
+		marginBottom:   189,
+		timeHeight:     100,
+		fontSize:       66.67, // 对应72DPI的16px
+		lineHeight:     100,   // 对应72DPI的24px
+		entrySpacing:   150,   // 条目之间的间距
+		elementSpacing: 30,    // 元素整体之间的间距
+		imageSpacing:   15,    // 图片之间的间距
+		minWideHeight:  600,   // Min height for Wide pics (AR >= 3)
+		minTallHeight:  800,   // Min height for Tall pics (AR <= 1/3)
+
+		// Added slices for 1-9 pictures (index 0 unused)
+		minLandscapeHeights: []float64{600, 600, 400, 600, 600, 600, 600, 600, 600}, // 横图 1-9 张	横图
+		minPortraitHeights:  []float64{800, 800, 600, 800, 800, 800, 800, 800, 800}, // 竖图 1-9 张	竖图
+
+		singleImageHeight: 3130, // 设置单张竖图的最大高度
+		singleImageWidth:  2124, // 设置单张横图的最大度
 	}
 	engine.availableWidth = 2480 - engine.marginLeft - engine.marginRight
 	engine.availableHeight = 3508 - engine.marginTop - engine.marginBottom
@@ -339,35 +336,447 @@ func (e *ContinuousLayoutEngine) processPictures(pictures []Picture) {
 		return
 	}
 
-	// --- Check for Ultra-Wide Pictures ---
-	hasUltraWide := false
-	ultraWideThreshold := 4.0
+	// --- Check for Ultra-Wide or Ultra-Tall Pictures ---
+	hasUltraWideOrTall := false
+	ultraThreshold := 4.0
 	for _, pic := range pictures {
 		if pic.Height > 0 && pic.Width > 0 {
 			ar := float64(pic.Width) / float64(pic.Height)
-			if ar >= ultraWideThreshold {
-				hasUltraWide = true
-				fmt.Printf("Debug (ProcessPics): Ultra-wide picture detected (Index %d, AR %.2f). Will use dynamic layout.\n", pic.Index, ar)
+			if ar >= ultraThreshold || ar <= (1.0/ultraThreshold) { // Check for wide OR tall
+				hasUltraWideOrTall = true
+				picType := "ultra-wide"
+				if ar <= (1.0 / ultraThreshold) {
+					picType = "ultra-tall"
+				}
+				fmt.Printf("Debug (ProcessPics): %s picture detected (Index %d, AR %.2f). Will use dynamic layout.\n", picType, pic.Index, ar)
 				break
 			}
 		}
 	}
 
 	// --- Choose Layout Strategy ---
-	if hasUltraWide {
+	if hasUltraWideOrTall {
 		// +++ Use NEW Dynamic Row-by-Row Strategy +++
 		fmt.Println("Debug (ProcessPics): Using dynamic row layout strategy.")
-		// TODO: Implement the dynamic row layout logic here
-		// (Loop through pictures, determine rows, calculate row layout, place row, update Y)
-		fmt.Printf("Warning: Dynamic row layout for entry with ultra-wide pictures is not yet implemented. Skipping picture layout for this entry (starting index: %d).\n", pictures[0].Index) // Assuming pictures is not empty here
-		// Placeholder: Fallback to old logic for now to avoid breaking everything
-		// Remove this fallback once dynamic logic is implemented
-		// processPicturesOldStrategy(e, pictures) // REMOVED Placeholder call
+
+		currentIndex := 0
+		for currentIndex < numPicsTotal {
+			// 1. Calculate Required Spacing Before this row
+			requiredSpacing := e.requiredSpacingBeforeElement()
+
+			// 2. Estimate minimum height for the *next potential row* (Simple estimate)
+			estimatedMinHeight := 100.0 // Baseline estimate
+			if currentIndex < numPicsTotal {
+				pic := pictures[currentIndex]
+				ar := 1.0
+				if pic.Height > 0 {
+					ar = float64(pic.Width) / float64(pic.Height)
+				}
+				estimatedMinHeight = GetRequiredMinHeight(e, GetPictureType(ar), 1)
+			}
+
+			// 3. Centralized Pagination Check (Before placing the row)
+			pageRemainingPhysicalHeight := (e.marginTop + e.availableHeight) - e.currentY
+			needsNewPage := false
+			if e.currentY > e.marginTop { // Only paginate if not at top
+				if pageRemainingPhysicalHeight-requiredSpacing < estimatedMinHeight {
+					needsNewPage = true
+				}
+			}
+
+			if needsNewPage {
+				e.newPage()
+				requiredSpacing = 0
+			}
+
+			// 4. Apply Spacing
+			e.currentY += requiredSpacing
+
+			// 5. Calculate Available Height for Row Placement
+			layoutAvailableHeight := (e.marginTop + e.availableHeight) - e.currentY
+			if layoutAvailableHeight <= 1e-6 { // Use tolerance
+				fmt.Printf("Warning: No available height left (%.2f) on page %d for picture row starting at index %d. Skipping remaining pictures.\n", layoutAvailableHeight, e.currentPage.Page, currentIndex)
+				break
+			}
+
+			// 6. Determine which pictures form the next row
+			picsInNextRow, rowConfigType := e.determineNextPictureRow(pictures[currentIndex:], layoutAvailableHeight)
+			numPicturesConsumed := len(picsInNextRow)
+
+			if numPicturesConsumed == 0 {
+				fmt.Printf("Warning: Could not determine layout for picture index %d. Skipping remaining pictures.\n", currentIndex)
+				break
+			}
+
+			// 7. Calculate the actual layout for this specific row
+			rowLayoutInfo, err := e.calculateRowLayout(picsInNextRow, rowConfigType, layoutAvailableHeight)
+			if err != nil {
+				fmt.Printf("Error calculating row layout for %d pictures (type: %s) starting at index %d: %v. Skipping row.\n", numPicturesConsumed, rowConfigType, currentIndex, err)
+				// Simple strategy: skip the problematic picture(s) and try next
+				currentIndex += numPicturesConsumed
+				continue // Try the next iteration
+			}
+
+			// 8. Double check if calculated height fits (should be handled by calculateRowLayout ideally)
+			if rowLayoutInfo.TotalHeight > layoutAvailableHeight+1e-6 {
+				fmt.Printf("Error: Calculated row height (%.2f) exceeds available height (%.2f) for %d pics (type: %s) starting at index %d. Skipping row.\n", rowLayoutInfo.TotalHeight, layoutAvailableHeight, numPicturesConsumed, rowConfigType, currentIndex)
+				currentIndex += numPicturesConsumed
+				continue
+			}
+
+			// Handle case where layout calculation yields zero height (shouldn't happen ideally)
+			if rowLayoutInfo.TotalHeight <= 1e-6 {
+				fmt.Printf("Warning: Calculated row layout for %d pics (type: %s) starting at %d resulted in zero height. Skipping row.\n", numPicturesConsumed, rowConfigType, currentIndex)
+				currentIndex += numPicturesConsumed
+				continue
+			}
+
+			// 9. Place the pictures for this row
+			e.placePicturesInRow(picsInNextRow, rowLayoutInfo)
+
+			// 10. Update Y Coordinate
+			e.currentY += rowLayoutInfo.TotalHeight
+
+			// 11. Advance Index
+			currentIndex += numPicturesConsumed
+		} // End for loop
 
 	} else {
 		// +++ Use OLD Standard Templated Strategy +++
-		fmt.Println("Debug (ProcessPics): No ultra-wide pictures. Using standard templated layout strategy.")
+		fmt.Println("Debug (ProcessPics): No ultra-wide/tall pictures. Using standard templated layout strategy.")
 		processPicturesOldStrategy(e, pictures)
+	}
+}
+
+// --- Placeholder Signatures for New Dynamic Layout Helper Functions ---
+
+// determineNextPictureRow looks at the remaining pictures and decides how many (and which)
+// should form the next row based on rules (ultra-wide/tall, 3, 2, 1) and available height.
+// Returns the pictures for the row and a string indicating the configuration type.
+func (e *ContinuousLayoutEngine) determineNextPictureRow(remainingPics []Picture, availableHeight float64) (picsForNextRow []Picture, rowConfigType string) {
+	numRemaining := len(remainingPics)
+	if numRemaining == 0 {
+		return []Picture{}, ""
+	}
+
+	ultraThreshold := 4.0
+	// Helper function to check if a picture is ultra-wide or ultra-tall
+	isUltra := func(pic Picture) bool {
+		if pic.Height > 0 && pic.Width > 0 {
+			ar := float64(pic.Width) / float64(pic.Height)
+			return ar >= ultraThreshold || ar <= (1.0/ultraThreshold)
+		}
+		return false // Treat invalid dimensions as not ultra
+	}
+
+	// --- Decision Logic ---
+
+	// 1. Check the first picture
+	pic1 := remainingPics[0]
+	if isUltra(pic1) {
+		fmt.Println("Debug (determineRow): First pic is ultra, forming row-of-1-ultra.")
+		return remainingPics[0:1], "row-of-1-ultra"
+	}
+
+	// 2. If pic1 is normal, try forming a row of 3
+	if numRemaining >= 3 {
+		pic2 := remainingPics[1]
+		pic3 := remainingPics[2]
+		if !isUltra(pic2) && !isUltra(pic3) {
+			// All three are normal, form a row of 3
+			fmt.Println("Debug (determineRow): First 3 pics are normal, forming row-of-3.")
+			return remainingPics[0:3], "row-of-3"
+		} else {
+			fmt.Println("Debug (determineRow): Cannot form row-of-3 (pic 2 or 3 is ultra).")
+		}
+	} // Implicitly falls through if less than 3 remain or condition not met
+
+	// 3. If row of 3 not formed, try forming a row of 2
+	if numRemaining >= 2 {
+		pic2 := remainingPics[1]
+		if !isUltra(pic2) {
+			// Both pic1 and pic2 are normal, form a row of 2
+			fmt.Println("Debug (determineRow): First 2 pics are normal, forming row-of-2.")
+			return remainingPics[0:2], "row-of-2"
+		} else {
+			fmt.Println("Debug (determineRow): Cannot form row-of-2 (pic 2 is ultra).")
+		}
+	} // Implicitly falls through if less than 2 remain or condition not met
+
+	// 4. Default to row of 1 (since pic1 is known to be normal here)
+	fmt.Println("Debug (determineRow): Defaulting to row-of-1 (normal pic).")
+	return remainingPics[0:1], "row-of-1"
+}
+
+// calculateRowLayout calculates the geometry for a specific row configuration.
+// It *must* respect availableHeight and check minimum heights, returning the best effort layout.
+func (e *ContinuousLayoutEngine) calculateRowLayout(picsInRow []Picture, rowConfigType string, availableHeight float64) (TemplateLayout, error) {
+	fmt.Printf("Debug (calculateRowLayout): Calculating for type '%s', %d pics, availableHeight %.2f\n", rowConfigType, len(picsInRow), availableHeight)
+
+	switch rowConfigType {
+	case "row-of-1-ultra", "row-of-1":
+		if len(picsInRow) != 1 {
+			return TemplateLayout{}, fmt.Errorf("calculateRowLayout: expected 1 picture for row-of-1, got %d", len(picsInRow))
+		}
+		pic := picsInRow[0]
+
+		// --- Calculate Single Picture Layout (Adapted from processSinglePictureLayoutAndPlace) ---
+		aspectRatio := 1.0
+		validAR := false
+		if pic.Height > 0 && pic.Width > 0 {
+			aspectRatio = float64(pic.Width) / float64(pic.Height)
+			validAR = true
+		} else {
+			fmt.Printf("Warning (calculateRowLayout): Invalid dimensions for picture index %d. Using default AR=1.\n", pic.Index)
+		}
+
+		picType := GetPictureType(aspectRatio)
+		finalWidth := 0.0
+		finalHeight := 0.0
+
+		// Use a small positive value for availableHeight if it's near zero to avoid division issues
+		if availableHeight <= 1e-6 {
+			fmt.Printf("Warning (calculateRowLayout): Available height is near zero (%.2f). Cannot calculate layout.\n", availableHeight)
+			// Return zero-height layout, the caller should handle this.
+			return TemplateLayout{TotalHeight: 0}, errors.New("available height is too small")
+		}
+
+		if !validAR {
+			// Fallback for invalid AR: Use available width and a reasonable capped height
+			fmt.Printf("Warning (calculateRowLayout): Using fallback dimensions for Pic %d due to invalid AR.\n", pic.Index)
+			finalWidth = e.availableWidth
+			// Estimate height based on min landscape, capped by available
+			finalHeight = math.Min(GetRequiredMinHeight(e, "landscape", 1), availableHeight)
+			if finalHeight < 1.0 {
+				finalHeight = 1.0
+			}
+		} else {
+			// Calculate dimensions based on picture type and available space
+			switch picType {
+			case "wide", "landscape":
+				// Fit width first
+				finalWidth = e.availableWidth
+				finalHeight = finalWidth / aspectRatio
+				// Scale down if height exceeds available
+				if finalHeight > availableHeight {
+					finalHeight = availableHeight
+					finalWidth = finalHeight * aspectRatio
+				}
+			case "tall", "portrait", "square", "unknown": // Treat square/unknown like portrait/tall
+				// Fit height first
+				finalHeight = availableHeight
+				finalWidth = finalHeight * aspectRatio
+				// Scale down if width exceeds available
+				if finalWidth > e.availableWidth {
+					finalWidth = e.availableWidth
+					finalHeight = finalWidth / aspectRatio
+				}
+			}
+		}
+
+		// Ensure positive dimensions after calculations
+		if finalWidth < 1.0 {
+			finalWidth = 1.0
+		}
+		if finalHeight < 1.0 {
+			finalHeight = 1.0
+		}
+
+		// --- Check Minimum Height (Log warning, but don't error out for dynamic layout) ---
+		requiredMinHeight := GetRequiredMinHeight(e, picType, 1) // Check against single pic requirement
+		if finalHeight < requiredMinHeight {
+			fmt.Printf("Warning (calculateRowLayout): Single picture (Index %d, Type %s) layout height %.2f does not meet minimum %.2f.\n", pic.Index, picType, finalHeight, requiredMinHeight)
+		}
+
+		// Return the layout
+		return TemplateLayout{
+			Positions:   [][]float64{{0, 0}}, // Position relative to row start
+			Dimensions:  [][]float64{{finalWidth, finalHeight}},
+			TotalHeight: finalHeight,
+			TotalWidth:  finalWidth, // Actual width used by this picture
+		}, nil
+
+	case "row-of-2":
+		if len(picsInRow) != 2 {
+			return TemplateLayout{}, fmt.Errorf("calculateRowLayout: expected 2 pictures for row-of-2, got %d", len(picsInRow))
+		}
+		// Calculate initial uniform layout
+		initialWidths, initialHeight, err := e.calculateUniformRowLayout(picsInRow)
+		if err != nil {
+			return TemplateLayout{}, fmt.Errorf("failed to calculate initial uniform layout for row-of-2: %w", err)
+		}
+
+		// Scale if necessary
+		finalWidths := initialWidths
+		finalHeight := initialHeight
+		scale := 1.0
+		if finalHeight > availableHeight {
+			if finalHeight > 1e-6 {
+				scale = availableHeight / finalHeight
+				finalHeight *= scale
+				for i := range finalWidths {
+					finalWidths[i] *= scale
+					if finalWidths[i] < 1.0 {
+						finalWidths[i] = 1.0
+					}
+				}
+			} else {
+				return TemplateLayout{TotalHeight: 0}, errors.New("initial calculated height near zero for row-of-2")
+			}
+		}
+
+		// Check minimum heights (log warnings)
+		for _, pic := range picsInRow {
+			ar := 1.0
+			if pic.Height > 0 {
+				ar = float64(pic.Width) / float64(pic.Height)
+			}
+			picType := GetPictureType(ar)
+			requiredMinHeight := GetRequiredMinHeight(e, picType, 2) // Check against 2-pic requirement
+			if finalHeight < requiredMinHeight {
+				fmt.Printf("Warning (calculateRowLayout): Row-of-2 picture (Index %d, Type %s) layout height %.2f does not meet minimum %.2f.\n", pic.Index, picType, finalHeight, requiredMinHeight)
+			}
+		}
+
+		// Construct layout
+		positions := [][]float64{{0, 0}, {finalWidths[0] + e.imageSpacing, 0}}
+		dimensions := [][]float64{{finalWidths[0], finalHeight}, {finalWidths[1], finalHeight}}
+		totalWidth := finalWidths[0] + e.imageSpacing + finalWidths[1]
+
+		return TemplateLayout{
+			Positions:   positions,
+			Dimensions:  dimensions,
+			TotalHeight: finalHeight,
+			TotalWidth:  totalWidth, // More accurate width
+		}, nil
+
+	case "row-of-3":
+		if len(picsInRow) != 3 {
+			return TemplateLayout{}, fmt.Errorf("calculateRowLayout: expected 3 pictures for row-of-3, got %d", len(picsInRow))
+		}
+		// Calculate initial uniform layout
+		initialWidths, initialHeight, err := e.calculateUniformRowLayout(picsInRow)
+		if err != nil {
+			return TemplateLayout{}, fmt.Errorf("failed to calculate initial uniform layout for row-of-3: %w", err)
+		}
+
+		// Scale if necessary
+		finalWidths := initialWidths
+		finalHeight := initialHeight
+		scale := 1.0
+		if finalHeight > availableHeight {
+			if finalHeight > 1e-6 {
+				scale = availableHeight / finalHeight
+				finalHeight *= scale
+				for i := range finalWidths {
+					finalWidths[i] *= scale
+					if finalWidths[i] < 1.0 {
+						finalWidths[i] = 1.0
+					}
+				}
+			} else {
+				return TemplateLayout{TotalHeight: 0}, errors.New("initial calculated height near zero for row-of-3")
+			}
+		}
+
+		// Check minimum heights (log warnings)
+		for _, pic := range picsInRow {
+			ar := 1.0
+			if pic.Height > 0 {
+				ar = float64(pic.Width) / float64(pic.Height)
+			}
+			picType := GetPictureType(ar)
+			requiredMinHeight := GetRequiredMinHeight(e, picType, 3) // Check against 3-pic requirement
+			if finalHeight < requiredMinHeight {
+				fmt.Printf("Warning (calculateRowLayout): Row-of-3 picture (Index %d, Type %s) layout height %.2f does not meet minimum %.2f.\n", pic.Index, picType, finalHeight, requiredMinHeight)
+			}
+		}
+
+		// Construct layout
+		pos1X := finalWidths[0] + e.imageSpacing
+		pos2X := pos1X + finalWidths[1] + e.imageSpacing
+		positions := [][]float64{{0, 0}, {pos1X, 0}, {pos2X, 0}}
+		dimensions := [][]float64{{finalWidths[0], finalHeight}, {finalWidths[1], finalHeight}, {finalWidths[2], finalHeight}}
+		totalWidth := finalWidths[0] + e.imageSpacing + finalWidths[1] + e.imageSpacing + finalWidths[2]
+
+		return TemplateLayout{
+			Positions:   positions,
+			Dimensions:  dimensions,
+			TotalHeight: finalHeight,
+			TotalWidth:  totalWidth, // More accurate width
+		}, nil
+	}
+	return TemplateLayout{}, fmt.Errorf("calculateRowLayout not implemented for type: %s (%d pics)", rowConfigType, len(picsInRow))
+}
+
+// placePicturesInRow places the pictures according to the row's calculated layout.
+func (e *ContinuousLayoutEngine) placePicturesInRow(picsInRow []Picture, rowLayout TemplateLayout) {
+	// TODO: Implement placement logic (adapt placePicturesInTemplate)
+	fmt.Printf("Debug (placePicturesInRow): Placing %d pictures. Layout TotalHeight: %.2f\n", len(picsInRow), rowLayout.TotalHeight)
+
+	if len(picsInRow) != len(rowLayout.Positions) || len(picsInRow) != len(rowLayout.Dimensions) {
+		fmt.Println("Error: Mismatch between picture count and layout information in placePicturesInRow.")
+		return
+	}
+
+	// Ensure entry exists
+	if len(e.currentPage.Entries) == 0 {
+		fmt.Println("Warning: placePicturesInRow called with no current entry. Creating one.")
+		e.currentPage.Entries = append(e.currentPage.Entries, PageEntry{})
+	}
+	currentEntry := &e.currentPage.Entries[len(e.currentPage.Entries)-1]
+	startY := e.currentY // Top Y coordinate for this row
+
+	// Calculate Centering Offset for the row
+	actualRowWidth := 0.0 // Calculate actual width from dimensions/positions if not provided reliably
+	lastPicIndex := len(rowLayout.Positions) - 1
+	if lastPicIndex >= 0 && len(rowLayout.Positions[lastPicIndex]) == 2 && len(rowLayout.Dimensions[lastPicIndex]) == 2 {
+		actualRowWidth = rowLayout.Positions[lastPicIndex][0] + rowLayout.Dimensions[lastPicIndex][0]
+	} else if rowLayout.TotalWidth > 0 {
+		actualRowWidth = rowLayout.TotalWidth // Use if available
+	} else {
+		// Estimate width if not properly calculated (fallback)
+		for _, dim := range rowLayout.Dimensions {
+			if len(dim) == 2 {
+				actualRowWidth += dim[0]
+			}
+		}
+		actualRowWidth += float64(len(picsInRow)-1) * e.imageSpacing
+	}
+
+	offsetX := 0.0
+	if actualRowWidth < e.availableWidth {
+		offsetX = (e.availableWidth - actualRowWidth) / 2.0
+	}
+	if offsetX < 0 {
+		offsetX = 0
+	}
+
+	for i, pic := range picsInRow {
+		relativeX := rowLayout.Positions[i][0]
+		relativeY := rowLayout.Positions[i][1] // Relative Y within the row (should usually be 0)
+		width := rowLayout.Dimensions[i][0]
+		height := rowLayout.Dimensions[i][1]
+
+		// Apply centering offset and current Y
+		absX0 := e.marginLeft + offsetX + relativeX
+		absY0 := startY + relativeY
+		absX1 := absX0 + width
+		absY1 := absY0 + height
+
+		area := [][]float64{{absX0, absY0}, {absX1, absY1}}
+
+		// Ensure Pictures slice is initialized
+		if currentEntry.Pictures == nil {
+			currentEntry.Pictures = make([]Picture, 0, len(picsInRow))
+		}
+		currentEntry.Pictures = append(currentEntry.Pictures, Picture{
+			Index:  pic.Index,
+			Area:   area,
+			URL:    pic.URL,
+			Width:  int(math.Round(width)),
+			Height: int(math.Round(height)),
+		})
 	}
 }
 
@@ -494,10 +903,69 @@ func processPicturesOldStrategy(e *ContinuousLayoutEngine, pictures []Picture) {
 	// Spacing *after* pictures is handled by the *next* element/entry's requiredSpacingBeforeElement check.
 }
 
-// calculateUniformRowHeightLayout calculates dimensions for a row aiming for uniform height,
-// fitting within the availableWidth. It returns the calculated widths for each picture,
-// (unused heights array), and the final uniform row height.
-// --- Entire function calculateUniformRowHeightLayout removed from line 786 to 859 ---
+// calculateUniformRowLayout calculates the dimensions for a row of pictures aiming for a uniform height,
+// such that the total width exactly fills the availableWidth.
+// It returns the calculated widths for each picture and the calculated uniform height.
+func (e *ContinuousLayoutEngine) calculateUniformRowLayout(picsInRow []Picture) (widths []float64, uniformHeight float64, err error) {
+	numPics := len(picsInRow)
+	if numPics == 0 {
+		return nil, 0, errors.New("calculateUniformRowLayout: called with zero pictures")
+	}
+
+	AW := e.availableWidth
+	spacing := e.imageSpacing
+	totalSpacing := float64(numPics-1) * spacing
+
+	// Calculate sum of aspect ratios (W/H)
+	sumAR := 0.0
+	ARs := make([]float64, numPics)
+	for i, pic := range picsInRow {
+		if pic.Height <= 0 || pic.Width <= 0 {
+			// Handle invalid dimensions - default to AR=1?
+			fmt.Printf("Warning (calculateUniformRowLayout): Invalid dimensions for pic index %d. Using AR=1.\n", pic.Index)
+			ARs[i] = 1.0
+		} else {
+			ARs[i] = float64(pic.Width) / float64(pic.Height)
+		}
+		sumAR += ARs[i]
+	}
+
+	if sumAR <= 1e-6 { // Avoid division by zero if all ARs are tiny/invalid
+		return nil, 0, errors.New("calculateUniformRowLayout: sum of aspect ratios is zero or negative")
+	}
+
+	// Calculate the uniform height H = (AvailableWidth - TotalSpacing) / SumOfAspectRatios
+	availableWidthForPics := AW - totalSpacing
+	if availableWidthForPics <= 0 {
+		// Not enough space even without pictures
+		return nil, 0, errors.New("calculateUniformRowLayout: available width is less than or equal to total spacing")
+	}
+	uniformHeight = availableWidthForPics / sumAR
+
+	if uniformHeight <= 1e-6 {
+		return nil, 0, errors.New("calculateUniformRowLayout: calculated uniform height is zero or negative")
+	}
+
+	// Calculate individual widths W_i = AR_i * H
+	widths = make([]float64, numPics)
+	calculatedTotalWidth := 0.0
+	for i := 0; i < numPics; i++ {
+		widths[i] = ARs[i] * uniformHeight
+		calculatedTotalWidth += widths[i]
+	}
+	calculatedTotalWidth += totalSpacing
+
+	// Optional: Adjust widths slightly due to potential floating point inaccuracies to ensure sum matches AW
+	widthAdjustment := (AW - calculatedTotalWidth) / float64(numPics)
+	for i := range widths {
+		widths[i] += widthAdjustment
+		if widths[i] < 1.0 {
+			widths[i] = 1.0
+		} // Ensure minimum width
+	}
+
+	return widths, uniformHeight, nil
+}
 
 // requiredSpacingBeforeElement checks if spacing is needed before the next element and returns the amount.
 // It no longer modifies e.currentY directly.
@@ -529,26 +997,33 @@ func (e *ContinuousLayoutEngine) processTemplatedLayoutAndPlace(pictures []Pictu
 
 	switch numPics {
 	case 3:
-		// Call the specific function for 3 pictures
-		return e.processLayoutForThreePictures(pictures, layoutAvailableHeight)
+		// --- UPDATED: Call new function with split logic ---
+		fmt.Println("Debug (TemplateDispatch): Calling processThreePicturesWithSplitLogic for 3 pictures.")
+		return e.processThreePicturesWithSplitLogic(pictures, layoutAvailableHeight)
 	case 4:
-		// Call the specific function for 4 pictures
-		return e.processLayoutForFourPictures(pictures, layoutAvailableHeight)
+		// --- UPDATED: Call new function with split logic ---
+		fmt.Println("Debug (TemplateDispatch): Calling processFourPicturesWithSplitLogic for 4 pictures.")
+		return e.processFourPicturesWithSplitLogic(pictures, layoutAvailableHeight)
 	case 5:
-		// Call the specific function for 5 pictures
-		return e.processLayoutForFivePictures(pictures, layoutAvailableHeight)
+		// --- UPDATED: Call new function with split logic ---
+		fmt.Println("Debug (TemplateDispatch): Calling processFivePicturesWithSplitLogic for 5 pictures.")
+		return e.processFivePicturesWithSplitLogic(pictures, layoutAvailableHeight)
 	case 6:
-		// Call the specific function for 6 pictures
-		return e.processLayoutForSixPictures(pictures, layoutAvailableHeight)
+		// --- UPDATED: Call new function with split logic ---
+		fmt.Println("Debug (TemplateDispatch): Calling processSixPicturesWithSplitLogic for 6 pictures.")
+		return e.processSixPicturesWithSplitLogic(pictures, layoutAvailableHeight)
 	case 7:
-		// Call the specific function for 7 pictures
-		return e.processLayoutForSevenPictures(pictures, layoutAvailableHeight)
+		// --- CORRECTED: Call the function with split logic ---
+		fmt.Println("Debug (TemplateDispatch): Calling processSevenPicturesWithSplitLogic for 7 pictures.")
+		return e.processSevenPicturesWithSplitLogic(pictures, layoutAvailableHeight)
 	case 8:
-		// Call the specific function for 8 pictures
-		return e.processLayoutForEightPictures(pictures, layoutAvailableHeight)
+		// --- UPDATED: Call new function with split logic ---
+		fmt.Println("Debug (TemplateDispatch): Calling processEightPicturesWithSplitLogic for 8 pictures.")
+		return e.processEightPicturesWithSplitLogic(pictures, layoutAvailableHeight)
 	case 9:
-		// Call the specific function for 9 pictures
-		return e.processLayoutForNinePictures(pictures, layoutAvailableHeight)
+		// --- UPDATED: Call new function with split logic ---
+		fmt.Println("Debug (TemplateDispatch): Calling processNinePicturesWithSplitLogic for 9 pictures.")
+		return e.processNinePicturesWithSplitLogic(pictures, layoutAvailableHeight)
 	default:
 		// For > 9 pictures, we currently don't have specific layouts. Signal split.
 		fmt.Printf("Debug: No specific layout defined for %d pictures. Signaling split by returning error value -2.0.\n", numPics)
@@ -630,4 +1105,76 @@ func (e *ContinuousLayoutEngine) placePicturesInTemplate(pictures []Picture, lay
 		})
 	}
 	// currentY updated by caller (e.g., processTemplatedLayoutAndPlace)
+}
+
+// processTwoPicGroup attempts to calculate and place a group of 2 pictures.
+// It handles pagination if the group doesn't fit the initial availableHeight.
+// It updates the engine's currentY state directly upon successful placement.
+// Returns the height used by the group and any critical error.
+func (e *ContinuousLayoutEngine) processTwoPicGroup(
+	groupPics []Picture,
+	groupNum int, // For logging (e.g., 1st, 2nd, 3rd group of 2)
+	layoutAvailableHeight float64,
+) (heightUsed float64, err error) {
+
+	if len(groupPics) != 2 {
+		return 0, fmt.Errorf("processTwoPicGroup: expected 2 pictures, got %d", len(groupPics))
+	}
+	var layoutInfo TemplateLayout
+	var calcErr error
+	const MINIMUM_VIABLE_ROW_HEIGHT = 50.0 // Minimum pixels high for a row to be considered valid
+
+	fmt.Printf("Debug (Split-Group 2pic-%d): Attempting calculation. AvailableHeight: %.2f\n", groupNum, layoutAvailableHeight)
+
+	// Use calculateRowLayout for 2 pictures
+	layoutInfo, calcErr = e.calculateRowLayout(groupPics, "row-of-2", layoutAvailableHeight)
+
+	// --- Check Fit and Place or Retry ---
+	// ADDED: Check if calculated height is too small to be viable
+	isTooSmall := layoutInfo.TotalHeight < MINIMUM_VIABLE_ROW_HEIGHT
+	if calcErr == nil && !isTooSmall && layoutInfo.TotalHeight <= layoutAvailableHeight+1e-6 { // Add tolerance
+		// Fits on current page and is viable
+		fmt.Printf("Debug (Split-Group 2pic-%d): Group fits and is viable on current page (Page %d, height: %.2f <= available: %.2f)\n", groupNum, e.currentPage.Page, layoutInfo.TotalHeight, layoutAvailableHeight)
+		e.placePicturesInRow(groupPics, layoutInfo)
+		e.currentY += layoutInfo.TotalHeight // Update Y
+		return layoutInfo.TotalHeight, nil
+	} else {
+		// Doesn't fit, calculation error, or too small - Force New Page
+		reason := "Unknown reason"
+		if calcErr != nil {
+			reason = fmt.Sprintf("Initial calc failed: %v", calcErr)
+		} else if isTooSmall {
+			reason = fmt.Sprintf("Calculated height %.2f is less than minimum viable %.2f", layoutInfo.TotalHeight, MINIMUM_VIABLE_ROW_HEIGHT)
+		} else { // Must be layoutInfo.TotalHeight > layoutAvailableHeight
+			reason = fmt.Sprintf("Group doesn't fit (%.2f > %.2f)", layoutInfo.TotalHeight, layoutAvailableHeight)
+		}
+		fmt.Printf("Debug (Split-Group 2pic-%d): %s. Forcing new page.\n", groupNum, reason)
+
+		e.newPage()
+		newAvailableHeight := (e.marginTop + e.availableHeight) - e.currentY
+
+		// Retry calculation on the new page
+		fmt.Printf("Debug (Split-Group 2pic-%d): Retrying calculation & placement on new page (Page %d, available: %.2f)\n", groupNum, e.currentPage.Page, newAvailableHeight)
+		layoutInfo, calcErr = e.calculateRowLayout(groupPics, "row-of-2", newAvailableHeight)
+
+		// ADDED: Check if calculated height is too small on retry
+		isTooSmallRetry := layoutInfo.TotalHeight < MINIMUM_VIABLE_ROW_HEIGHT
+		if calcErr != nil || isTooSmallRetry || layoutInfo.TotalHeight > newAvailableHeight+1e-6 { // Add tolerance
+			// Handle error: Failed even on new page
+			errMsg := fmt.Sprintf("failed to place 2-pic group %d even on new page", groupNum)
+			if calcErr != nil {
+				errMsg += fmt.Sprintf(": %v", calcErr)
+			} else if isTooSmallRetry {
+				errMsg += fmt.Sprintf(" (height %.2f < min viable %.2f)", layoutInfo.TotalHeight, MINIMUM_VIABLE_ROW_HEIGHT)
+			} else {
+				errMsg += fmt.Sprintf(" (height %.2f > available %.2f)", layoutInfo.TotalHeight, newAvailableHeight)
+			}
+			fmt.Printf("Error: %s\n", errMsg)
+			return 0, errors.New(errMsg)
+		}
+		// Place successfully on new page
+		e.placePicturesInRow(groupPics, layoutInfo)
+		e.currentY += layoutInfo.TotalHeight // Update Y on new page
+		return layoutInfo.TotalHeight, nil
+	}
 }

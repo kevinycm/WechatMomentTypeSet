@@ -37,37 +37,30 @@ type ContinuousLayoutPage struct {
 
 // ContinuousLayoutEngine represents the continuous layout engine
 type ContinuousLayoutEngine struct {
-	entries                          []Entry
-	pages                            []ContinuousLayoutPage
-	currentPage                      *ContinuousLayoutPage
-	marginLeft                       float64
-	marginRight                      float64
-	marginTop                        float64
-	marginBottom                     float64
-	availableWidth                   float64
-	availableHeight                  float64
-	timeHeight                       float64
-	fontSize                         float64
-	lineHeight                       float64
-	currentY                         float64
-	timeAreaBottom                   float64
-	entrySpacing                     float64 // 条目之间的间距
-	elementSpacing                   float64 // 元素整体之间的间距
-	imageSpacing                     float64 // 图片之间的间距
-	minWideHeight                    float64 // Min height for Wide pics (AR >= 3)
-	minTallHeight                    float64 // Min height for Tall pics (AR <= 1/3)
-	minLandscapeHeight               float64 // Base Min height for Landscape pics (1 < AR < 3) - Used for < 5 pics
-	minPortraitHeight                float64 // Base Min height for Portrait pics (1/3 < AR < 1) - Used for < 5 pics
-	minLandscapeHeightLargeGroup     float64 // Added: Min height for Landscape pics (>= 5 pics)
-	minPortraitHeightLargeGroup      float64 // Added: Min height for Portrait pics (>= 5 pics)
-	minLandscapeHeightVeryLargeGroup float64 // Added: Min height for Landscape pics (>= 8 pics)
-	minPortraitHeightVeryLargeGroup  float64 // Added: Min height for Portrait pics (>= 8 pics)
-	singleImageHeight                float64 // 单张竖图的默认高度
-	singleImageWidth                 float64 // 单张横图的默认宽度
-	minImageHeight                   float64 // 单张竖图的最小展示高度
-	minImageWidth                    float64 // 单张横图的最小展示宽度
-	currentYearMonth                 string
-	bottomMargin                     float64
+	entries             []Entry
+	pages               []ContinuousLayoutPage
+	currentPage         *ContinuousLayoutPage
+	marginLeft          float64
+	marginRight         float64
+	marginTop           float64
+	marginBottom        float64
+	availableWidth      float64
+	availableHeight     float64
+	timeHeight          float64
+	fontSize            float64
+	lineHeight          float64
+	currentY            float64
+	timeAreaBottom      float64
+	entrySpacing        float64   // 条目之间的间距
+	elementSpacing      float64   // 元素整体之间的间距
+	imageSpacing        float64   // 图片之间的间距
+	minWideHeight       float64   // Min height for Wide pics (AR >= 3)
+	minTallHeight       float64   // Min height for Tall pics (AR <= 1/3)
+	minLandscapeHeights []float64 // 横图最小高度 (索引 1-9 对应 1-9 张图)
+	minPortraitHeights  []float64 // 竖图最小高度 (索引 1-9 对应 1-9 张图)
+	singleImageHeight   float64   // 单张竖图的默认高度
+	singleImageWidth    float64   // 单张横图的默认宽度
+	currentYearMonth    string
 }
 
 // TemplateLayout holds the calculated positions and dimensions for a template

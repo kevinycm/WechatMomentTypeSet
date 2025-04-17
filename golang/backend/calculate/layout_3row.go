@@ -42,6 +42,11 @@ func (e *ContinuousLayoutEngine) calculateLayout_3Row(ARs []float64, types []str
 	meetsMin := true
 	requiredMinHeights := make([]float64, 3)
 	for i, picType := range types {
+		// Use the GetRequiredMinHeight helper function
+		requiredMinHeight := GetRequiredMinHeight(e, picType, 3)
+		requiredMinHeights[i] = requiredMinHeight // Store it (might be redundant)
+
+		/* // Old switch logic removed
 		switch picType {
 		case "wide":
 			requiredMinHeights[i] = e.minWideHeight
@@ -54,6 +59,7 @@ func (e *ContinuousLayoutEngine) calculateLayout_3Row(ARs []float64, types []str
 		default:
 			requiredMinHeights[i] = e.minLandscapeHeight // Fallback
 		}
+		*/
 		// All pictures have the same height H in this layout
 		if H < requiredMinHeights[i] {
 			meetsMin = false

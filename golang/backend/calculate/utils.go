@@ -28,36 +28,41 @@ func GetPictureType(aspectRatio float64) string {
 // Helper function to get the required minimum height for a given picture type and group size.
 // UPDATED SIGNATURE AND LOGIC
 func GetRequiredMinHeight(e *ContinuousLayoutEngine, picType string, numPics int) float64 {
+	// Clamp numPics to the valid range [1, 9] for slice access
+	idx := numPics
+	if idx < 1 {
+		idx = 1
+	}
+	if idx > 9 {
+		idx = 9
+	}
+
 	switch picType {
 	case "wide":
 		return e.minWideHeight // Wide min height is constant
 	case "tall":
 		return e.minTallHeight // Tall min height is constant
 	case "landscape":
-		if numPics >= 8 {
-			return e.minLandscapeHeightVeryLargeGroup // Use specific value for >= 8 pics
-		} else if numPics >= 5 {
-			return e.minLandscapeHeightLargeGroup // Use 600 for 5-7 pics
-		} else {
-			return e.minLandscapeHeight // Use base 400 for < 5 pics
+		// Make sure the slice has been initialized and the index is valid
+		if len(e.minLandscapeHeights) > idx-1 {
+			return e.minLandscapeHeights[idx-1]
 		}
+		fmt.Printf("Warning: minLandscapeHeights not properly initialized or index out of bounds (%d)\n", idx)
+		return 800.0 // Return default landscape height as fallback
 	case "portrait":
-		if numPics >= 8 {
-			return e.minPortraitHeightVeryLargeGroup // Use specific value for >= 8 pics
-		} else if numPics >= 5 {
-			return e.minPortraitHeightLargeGroup // Use 900 for 5-7 pics
-		} else {
-			return e.minPortraitHeight // Use base 600 for < 5 pics
+		// Make sure the slice has been initialized and the index is valid
+		if len(e.minPortraitHeights) > idx-1 {
+			return e.minPortraitHeights[idx-1]
 		}
+		fmt.Printf("Warning: minPortraitHeights not properly initialized or index out of bounds (%d)\n", idx)
+		return 1000.0 // Return default portrait height as fallback
 	default: // square, unknown
-		// Use landscape height as fallback, respecting numPics tiers
-		if numPics >= 8 {
-			return e.minLandscapeHeightVeryLargeGroup
-		} else if numPics >= 5 {
-			return e.minLandscapeHeightLargeGroup
-		} else {
-			return e.minLandscapeHeight
+		// Use landscape height as fallback
+		if len(e.minLandscapeHeights) > idx-1 {
+			return e.minLandscapeHeights[idx-1]
 		}
+		fmt.Printf("Warning: Fallback minLandscapeHeights not properly initialized or index out of bounds (%d)\n", idx)
+		return 800.0 // Return default landscape height as fallback
 	}
 }
 
