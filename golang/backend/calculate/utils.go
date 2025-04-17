@@ -4,10 +4,6 @@ import (
 	"fmt"
 )
 
-// Layout represents a picture layout configuration
-type Layout struct {
-}
-
 // Helper function to get picture type based on Aspect Ratio (AR)
 func GetPictureType(aspectRatio float64) string {
 	if aspectRatio >= 3.0 {
@@ -64,32 +60,4 @@ func GetRequiredMinHeight(e *ContinuousLayoutEngine, picType string, numPics int
 		fmt.Printf("Warning: Fallback minLandscapeHeights not properly initialized or index out of bounds (%d)\n", idx)
 		return 800.0 // Return default landscape height as fallback
 	}
-}
-
-// checkMinHeights verifies if all pictures in a calculated layout meet their type-specific minimum height requirements.
-// UPDATED TO CALL getRequiredMinHeight WITH numPics
-func CheckMinHeights(e *ContinuousLayoutEngine, layout TemplateLayout, types []string, numPics int) bool {
-	if len(layout.Dimensions) != numPics || len(types) != numPics {
-		fmt.Printf("Warning: checkMinHeights received mismatched lengths (Dimensions: %d, Types: %d, expected: %d)\n", len(layout.Dimensions), len(types), numPics)
-		return false // Data inconsistency
-	}
-
-	for i := 0; i < numPics; i++ {
-		picType := types[i]
-		// Pass numPics to get the correct minimum height
-		requiredMinHeight := GetRequiredMinHeight(e, picType, numPics)
-
-		// Safely access dimensions
-		if i >= len(layout.Dimensions) || len(layout.Dimensions[i]) != 2 {
-			fmt.Printf("Warning: Invalid dimensions data for picture %d in checkMinHeights.\n", i)
-			return false // Invalid layout data
-		}
-		actualHeight := layout.Dimensions[i][1]
-
-		if actualHeight < requiredMinHeight-1e-6 { // Use tolerance for float comparison
-			fmt.Printf("Debug: Min height check failed for pic %d (Type: %s, NumPics: %d). Required: %.2f, Actual: %.2f\n", i, picType, numPics, requiredMinHeight, actualHeight)
-			return false // Minimum height not met
-		}
-	}
-	return true // All checks passed
 }

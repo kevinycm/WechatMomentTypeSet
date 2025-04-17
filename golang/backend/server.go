@@ -49,16 +49,6 @@ func (s *Server) Start() error {
 	return http.ListenAndServe(addr, nil)
 }
 
-// formatTime converts time string from "2025-03-20 12:30:15" to "2025年3月20日 12:30"
-func formatTime(timeStr string) string {
-	t, err := time.Parse("2006-01-02 15:04:05", timeStr)
-	if err != nil {
-		return timeStr // Return original string if parsing fails
-	}
-	return fmt.Sprintf("%d年%d月%d日 %02d:%02d",
-		t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute())
-}
-
 // getYearMonthKey returns a sortable key for year-month grouping
 func getYearMonthKey(timeStr string) string {
 	t, err := time.Parse("2006-01-02 15:04:05", timeStr)
@@ -100,15 +90,15 @@ func (s *Server) handleContinuousLayoutReal(w http.ResponseWriter, r *http.Reque
 	yearMonthGroups := make(map[string][]calculate.Entry)
 	yearMonthKeys := make([]string, 0)
 	for _, id := range ids {
-		testCase := RealData[id]
-		// Convert models.NewMoment (represented by TestCase here) to calculate.Entry
+		element := RealData[id]
+		// Convert models.NewMoment (represented by Element here) to calculate.Entry
 		entry := calculate.Entry{
-			ID:       int64(testCase.ID),
-			Time:     testCase.Time,
-			Text:     testCase.Text,
-			Pictures: testCase.Pictures, // Directly use the existing Pictures field
+			ID:       int64(element.ID),
+			Time:     element.Time,
+			Text:     element.Text,
+			Pictures: element.Pictures, // Directly use the existing Pictures field
 		}
-		yearMonthKey := getYearMonthKey(testCase.Time)
+		yearMonthKey := getYearMonthKey(element.Time)
 		if yearMonthKey == "" {
 			continue
 		}

@@ -20,8 +20,16 @@ type NewMoment struct {
 	QiniuMediaURLs string    `json:"qiniu_media_urls"`
 }
 
+// Element represents a test case (Renamed from Element)
+type Element struct {
+	ID       int                 `json:"id"`
+	Time     string              `json:"time"`
+	Text     string              `json:"text"`
+	Pictures []calculate.Picture `json:"pictures"`
+}
+
 // RealData stores the data fetched from MySQL
-var RealData map[int]TestCase
+var RealData map[int]Element
 
 // InitRealData initializes the RealData map by fetching data from MySQL
 func InitRealData(dsn string) error {
@@ -51,7 +59,7 @@ func InitRealData(dsn string) error {
 		AND type = 1
 		AND media_infos IS NOT NULL 
 		AND qiniu_media_urls IS NOT NULL
-		-- AND (LENGTH(qiniu_media_urls) - LENGTH(REPLACE(qiniu_media_urls, ',', '')) + 1) / 2 = 4
+		AND (LENGTH(qiniu_media_urls) - LENGTH(REPLACE(qiniu_media_urls, ',', '')) + 1) / 2 = 9
 		-- AND DATE(release_time) = '2025-03-09'
 		-- AND DATE(release_time) <= '2024-10-21'
 		-- AND DATE(release_time) = '2022-04-21'
@@ -62,27 +70,12 @@ func InitRealData(dsn string) error {
 		ORDER BY release_time DESC
 	`)
 
-	// rows, err := db.Query(`
-	// 	SELECT
-	// 		id,
-	// 		release_time,
-	// 		text,
-	// 		media_infos,
-	// 		qiniu_media_urls
-	// 	FROM new_moment
-	// 	WHERE deleted_at IS NULL
-	// 	AND type = 1
-	// 	AND media_infos IS NOT NULL
-	// 	AND qiniu_media_urls IS NOT NULL
-	// 	AND (LENGTH(qiniu_media_urls) - LENGTH(REPLACE(qiniu_media_urls, ',', '')) + 1) / 2 <= 2
-	// 	ORDER BY release_time DESC
-	// `)
 	if err != nil {
 		return err
 	}
 	defer rows.Close()
 
-	RealData = make(map[int]TestCase)
+	RealData = make(map[int]Element)
 
 	// Process each row
 	for rows.Next() {
@@ -106,15 +99,14 @@ func InitRealData(dsn string) error {
 			continue
 		}
 
-		// Create TestCase entry
-		testCase := TestCase{
+		element := Element{
 			ID:       int(moment.ID),
 			Time:     moment.ReleaseTime.Format("2006-01-02 15:04:05"),
 			Text:     moment.Text,
 			Pictures: pictures,
 		}
 
-		RealData[int(moment.ID)] = testCase
+		RealData[int(moment.ID)] = element
 	}
 
 	return rows.Err()
@@ -199,10 +191,4 @@ func processPictureInfo(mediaInfos, qiniuMediaURLs string) ([]calculate.Picture,
 
 	log.Printf(" Finished processing. Created %d pictures.", len(pictures))
 	return pictures, nil
-}
-
-// GetRealDataByID returns a specific test case from RealData
-func GetRealDataByID(id int) (TestCase, bool) {
-	testCase, exists := RealData[id]
-	return testCase, exists
 }

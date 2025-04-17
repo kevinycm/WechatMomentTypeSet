@@ -4,9 +4,6 @@ import (
 	"fmt"
 )
 
-// Removed Placeholder for GetPictureTypeAR - Assume defined elsewhere in package
-// Removed Placeholder for GetRequiredMinHeight - Assume defined elsewhere in package
-
 // processSevenPicturesWithSplitLogic handles layout for 7 pictures based on the detailed 10-step rules.
 // Returns height used ONLY if all 7 are placed together initially (Rule 1).
 // Returns 0 in all other scenarios (splits, placements on new pages), caller relies on final e.currentY.
@@ -260,29 +257,3 @@ func (e *ContinuousLayoutEngine) placeAllSevenOnNewPage(pictures []Picture) floa
 		return 0
 	}
 }
-
-// GetPictureType function (assuming it takes ar float64)
-// Ensure definition exists elsewhere (e.g., engine.go)
-// func GetPictureType(ar float64) string { ... }
-
-// GetRequiredMinHeight function
-// Ensure definition exists elsewhere (e.g., engine.go)
-// func GetRequiredMinHeight(e *ContinuousLayoutEngine, picType string, numPicsContext int) float64 { ... }
-
-// processSinglePictureLayoutAndPlace function
-// Ensure definition exists elsewhere (e.g., engine.go)
-// func (e *ContinuousLayoutEngine) processSinglePictureLayoutAndPlace(picture Picture, layoutAvailableHeight float64) float64 { ... }
-
-// processThreePicturesWithSplitLogic function
-// LINTER FIX: Assume returns float64
-// Ensure definition exists elsewhere (e.g., process_layout_3_split.go)
-// func (e *ContinuousLayoutEngine) processThreePicturesWithSplitLogic(pictures []Picture, layoutAvailableHeight float64) float64 { ... }
-
-// processFivePicturesWithSplitLogic function
-// Ensure definition exists elsewhere (e.g., process_layout_5_split.go)
-// func (e *ContinuousLayoutEngine) processFivePicturesWithSplitLogic(pictures []Picture, layoutAvailableHeight float64) float64 { ... } // Note: Return error? Assume float64
-
-// processFourPicturesWithSplitLogic function
-// LINTER FIX: Assume returns float64
-// Ensure definition exists elsewhere (e.g., process_layout_4_split.go)
-// func (e *ContinuousLayoutEngine) processFourPicturesWithSplitLogic(pictures []Picture, layoutAvailableHeight float64) float64 { ... }

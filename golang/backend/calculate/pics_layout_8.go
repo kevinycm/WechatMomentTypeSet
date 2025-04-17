@@ -166,6 +166,5 @@ func (e *ContinuousLayoutEngine) calculateEightPicturesLayout(pictures []Picture
 			fmt.Printf("Debug: No fitting layout for %d pics (no wide/tall). Signaling split_required.\n", numPics)
 			return TemplateLayout{}, fmt.Errorf("split_required")
 		}
-		// TODO: Consider if fallback using the layout with minimum violation factor is needed later.
 	}
 }

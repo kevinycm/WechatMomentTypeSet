@@ -139,6 +139,3 @@ func (e *ContinuousLayoutEngine) placeG2OnNewPage(picturesG2 []Picture) float64 
 	}
 	return 0 // Always return 0 from this helper as a split occurred.
 }
-
-// Removed placeAllFiveOnNewPage helper function
-// Removed pre-declared variables for goto as they are no longer needed.

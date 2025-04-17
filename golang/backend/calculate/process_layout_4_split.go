@@ -137,5 +137,3 @@ func (e *ContinuousLayoutEngine) placeG2TwoOnNewPage(picturesG2 []Picture) float
 	}
 	return 0 // Always return 0 as split occurred.
 }
-
-// Removed old logic/helpers if any existed.

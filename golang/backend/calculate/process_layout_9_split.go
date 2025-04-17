@@ -11,14 +11,6 @@ import (
 // Defining it here as it seems to be missing.
 var ErrMinHeightConstraint = errors.New("minimum height constraint violated")
 
-// LayoutInfo stores results from layout calculation functions.
-// Defining a basic version here as it seems to be missing.
-type LayoutInfo struct {
-	TotalHeight float64
-	// Add other relevant fields if necessary, like individual item layouts:
-	// Items []ItemLayout // Assuming ItemLayout is defined elsewhere or needs definition
-}
-
 // processNinePicturesWithSplitLogic implements the new 1-10 rules for 9-picture layout.
 // It attempts various layout strategies (9-pic, 3-pic, 6-pic splits) across pages
 // based on available height and minimum picture requirements.
@@ -239,7 +231,3 @@ NewPageForG3:
 		return 0 // Indicate split occurred, but G3 failed
 	}
 }
-
-// Removed processPictureGroup function
-
-// Removed placeAllNineOnNewPage function

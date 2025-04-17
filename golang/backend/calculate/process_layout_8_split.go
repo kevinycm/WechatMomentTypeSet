@@ -257,13 +257,3 @@ func (e *ContinuousLayoutEngine) placeAllEightOnNewPage(pictures []Picture) floa
 		return 0
 	}
 }
-
-// Removed old fallbackSplitFourPlusFour
-
-// --- Helper functions from process_layout_7_split.go are needed ---
-// Need to ensure these are accessible, e.g., defined in a shared utility file or engine.go
-// func removeLastNPicturesFromEntry(currentPage **ContinuousLayoutPage, n int) { ... }
-// func getEntryPictureCount(currentPage **ContinuousLayoutPage) int { ... }
-// func removePicturesAdded(currentPage **ContinuousLayoutPage, countBefore int) { ... }
-// func GetPictureType(ar float64) string { ... }
-// func GetRequiredMinHeight(e *ContinuousLayoutEngine, picType string, numPicsContext int) float64 { ... }

@@ -170,3 +170,6 @@ func (e *ContinuousLayoutEngine) calculateFourPicturesLayout(pictures []Picture,
 		}
 	}
 }
+
+// calculateLayout_4_2T2B calculates the 2 Top, 2 Bottom layout.
+// ... existing code ...

@@ -401,7 +401,7 @@ func (e *ContinuousLayoutEngine) processPictures(pictures []Picture) {
 			}
 
 			// 6. Determine which pictures form the next row
-			picsInNextRow, rowConfigType := e.determineNextPictureRow(pictures[currentIndex:], layoutAvailableHeight)
+			picsInNextRow, rowConfigType := e.determineNextPictureRow(pictures[currentIndex:])
 			numPicturesConsumed := len(picsInNextRow)
 
 			if numPicturesConsumed == 0 {
@@ -454,7 +454,7 @@ func (e *ContinuousLayoutEngine) processPictures(pictures []Picture) {
 // determineNextPictureRow looks at the remaining pictures and decides how many (and which)
 // should form the next row based on rules (ultra-wide/tall, 3, 2, 1) and available height.
 // Returns the pictures for the row and a string indicating the configuration type.
-func (e *ContinuousLayoutEngine) determineNextPictureRow(remainingPics []Picture, availableHeight float64) (picsForNextRow []Picture, rowConfigType string) {
+func (e *ContinuousLayoutEngine) determineNextPictureRow(remainingPics []Picture) (picsForNextRow []Picture, rowConfigType string) {
 	numRemaining := len(remainingPics)
 	if numRemaining == 0 {
 		return []Picture{}, ""
