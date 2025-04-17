@@ -41,61 +41,12 @@ func (s *Server) Start() error {
 	http.Handle("/", fs)
 
 	// API endpoints
-	http.HandleFunc("/layout/", s.handleLayout)
-	http.HandleFunc("/continuous-layout-sample", s.handleContinuousLayoutSample)
 	http.HandleFunc("/continuous-layout-real", s.handleContinuousLayoutReal)
 
 	// Start server
 	addr := fmt.Sprintf(":%d", s.port)
 	log.Printf("Server starting on port %d...", s.port)
 	return http.ListenAndServe(addr, nil)
-}
-
-// handleLayout handles the layout API endpoint
-func (s *Server) handleLayout(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	// Extract ID from path
-	pathParts := strings.Split(r.URL.Path, "/")
-	if len(pathParts) != 3 {
-		http.Error(w, "Invalid path format", http.StatusBadRequest)
-		return
-	}
-
-	idStr := pathParts[2]
-	id, err := strconv.Atoi(idStr)
-	if err != nil {
-		http.Error(w, "Invalid id parameter", http.StatusBadRequest)
-		return
-	}
-
-	// Get test case
-	testCase, ok := SampleData[id]
-	if !ok {
-		http.Error(w, "Entry not found", http.StatusNotFound)
-		return
-	}
-
-	// Process layout
-	engine := NewLayoutEngine(testCase)
-	result, err := engine.ProcessEntry()
-	if err != nil {
-		http.Error(w, "Error processing layout", http.StatusInternalServerError)
-		return
-	}
-
-	// Set response headers
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-
-	// Encode and send response
-	if err := json.NewEncoder(w).Encode(result); err != nil {
-		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
-		return
-	}
 }
 
 // formatTime converts time string from "2025-03-20 12:30:15" to "2025年3月20日 12:30"
@@ -115,35 +66,6 @@ func getYearMonthKey(timeStr string) string {
 		return ""
 	}
 	return fmt.Sprintf("%d-%02d", t.Year(), t.Month())
-}
-
-func (s *Server) handleContinuousLayoutSample(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	// Convert TestCase to Entry
-	var entries []calculate.Entry
-	for _, testCase := range SampleData {
-		entries = append(entries, calculate.Entry{
-			Time:     testCase.Time,
-			Text:     testCase.Text,
-			Pictures: testCase.Pictures,
-		})
-	}
-
-	engine := calculate.NewContinuousLayoutEngine(entries)
-	pages, err := engine.ProcessEntries()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"pages": pages,
-	})
 }
 
 func (s *Server) handleContinuousLayoutReal(w http.ResponseWriter, r *http.Request) {
@@ -179,6 +101,13 @@ func (s *Server) handleContinuousLayoutReal(w http.ResponseWriter, r *http.Reque
 	yearMonthKeys := make([]string, 0)
 	for _, id := range ids {
 		testCase := RealData[id]
+		// Convert models.NewMoment (represented by TestCase here) to calculate.Entry
+		entry := calculate.Entry{
+			ID:       int64(testCase.ID),
+			Time:     testCase.Time,
+			Text:     testCase.Text,
+			Pictures: testCase.Pictures, // Directly use the existing Pictures field
+		}
 		yearMonthKey := getYearMonthKey(testCase.Time)
 		if yearMonthKey == "" {
 			continue
@@ -188,11 +117,6 @@ func (s *Server) handleContinuousLayoutReal(w http.ResponseWriter, r *http.Reque
 			yearMonthKeys = append(yearMonthKeys, yearMonthKey)
 		}
 
-		entry := calculate.Entry{
-			Time:     formatTime(testCase.Time),
-			Text:     testCase.Text,
-			Pictures: testCase.Pictures,
-		}
 		yearMonthGroups[yearMonthKey] = append(yearMonthGroups[yearMonthKey], entry)
 	}
 

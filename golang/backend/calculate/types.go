@@ -11,6 +11,7 @@ type Picture struct {
 
 // Entry represents a single moment entry with time, text and pictures
 type Entry struct {
+	ID       int64     `json:"id"`
 	Time     string    `json:"time"`
 	Text     string    `json:"text"`
 	Pictures []Picture `json:"pictures"`
@@ -18,6 +19,7 @@ type Entry struct {
 
 // PageEntry represents a single entry's layout information on a page
 type PageEntry struct {
+	ID        int64         `json:"id"`
 	Time      string        `json:"time"`      // 格式：2025年3月30日 17:50
 	DatePart  string        `json:"date_part"` // 格式：5月23日 周一
 	TimePart  string        `json:"time_part"` // 格式：08:28

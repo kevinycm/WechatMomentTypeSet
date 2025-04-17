@@ -54,13 +54,13 @@ func (e *ContinuousLayoutEngine) ProcessEntries() ([]ContinuousLayoutPage, error
 
 	for _, entry := range e.entries {
 		// Let processEntry handle content placement and pagination internally
-		e.processEntry(entry)
+		e.processEntry(entry, entry.ID)
 	}
 
 	return e.pages, nil
 }
 
-func (e *ContinuousLayoutEngine) processEntry(entry Entry) {
+func (e *ContinuousLayoutEngine) processEntry(entry Entry, entryID int64) {
 	// Add entry spacing if this isn't the first element on the page
 	// We need a more robust check than just e.currentY > e.marginTop
 	// Check if the current page actually has content already placed
@@ -77,7 +77,7 @@ func (e *ContinuousLayoutEngine) processEntry(entry Entry) {
 	}
 
 	// 1. Process Time
-	e.addTime(entry.Time)
+	e.addTime(entry.Time, entryID)
 
 	// 2. Process Text (handles its own internal pagination)
 	if strings.TrimSpace(entry.Text) != "" {
@@ -91,7 +91,7 @@ func (e *ContinuousLayoutEngine) processEntry(entry Entry) {
 }
 
 // Modify addTime to handle potential page break *before* adding the time entry
-func (e *ContinuousLayoutEngine) addTime(timeStr string) {
+func (e *ContinuousLayoutEngine) addTime(timeStr string, entryID int64) {
 	// Check if space is available for the time block itself
 	minTimeHeight := e.timeHeight
 	// Calculate remaining space accurately at this point
@@ -115,7 +115,8 @@ func (e *ContinuousLayoutEngine) addTime(timeStr string) {
 	}
 
 	// Create the entry *now*, right before placing the time
-	entry := PageEntry{
+	pageEntry := PageEntry{
+		ID:        entryID,
 		Time:      timeStr,
 		TimeArea:  [][]float64{{x0, y0}, {x1, y1}},
 		TextAreas: make([][][]float64, 0), // Initialize other fields
@@ -144,12 +145,12 @@ func (e *ContinuousLayoutEngine) addTime(timeStr string) {
 			time.Wednesday: "周三", time.Thursday: "周四", time.Friday: "周五",
 			time.Saturday: "周六",
 		}
-		entry.DatePart = fmt.Sprintf("%d月%d日 %s", t.Month(), t.Day(), weekdayMap[t.Weekday()])
-		entry.TimePart = fmt.Sprintf("%02d:%02d", t.Hour(), t.Minute())
+		pageEntry.DatePart = fmt.Sprintf("%d月%d日 %s", t.Month(), t.Day(), weekdayMap[t.Weekday()])
+		pageEntry.TimePart = fmt.Sprintf("%02d:%02d", t.Hour(), t.Minute())
 	}
 
 	// Add the newly created entry to the current page
-	e.currentPage.Entries = append(e.currentPage.Entries, entry)
+	e.currentPage.Entries = append(e.currentPage.Entries, pageEntry)
 
 	// Update current Y position *after* placing time
 	// Add elementSpacing only if text or pictures will follow
@@ -1105,76 +1106,4 @@ func (e *ContinuousLayoutEngine) placePicturesInTemplate(pictures []Picture, lay
 		})
 	}
 	// currentY updated by caller (e.g., processTemplatedLayoutAndPlace)
-}
-
-// processTwoPicGroup attempts to calculate and place a group of 2 pictures.
-// It handles pagination if the group doesn't fit the initial availableHeight.
-// It updates the engine's currentY state directly upon successful placement.
-// Returns the height used by the group and any critical error.
-func (e *ContinuousLayoutEngine) processTwoPicGroup(
-	groupPics []Picture,
-	groupNum int, // For logging (e.g., 1st, 2nd, 3rd group of 2)
-	layoutAvailableHeight float64,
-) (heightUsed float64, err error) {
-
-	if len(groupPics) != 2 {
-		return 0, fmt.Errorf("processTwoPicGroup: expected 2 pictures, got %d", len(groupPics))
-	}
-	var layoutInfo TemplateLayout
-	var calcErr error
-	const MINIMUM_VIABLE_ROW_HEIGHT = 50.0 // Minimum pixels high for a row to be considered valid
-
-	fmt.Printf("Debug (Split-Group 2pic-%d): Attempting calculation. AvailableHeight: %.2f\n", groupNum, layoutAvailableHeight)
-
-	// Use calculateRowLayout for 2 pictures
-	layoutInfo, calcErr = e.calculateRowLayout(groupPics, "row-of-2", layoutAvailableHeight)
-
-	// --- Check Fit and Place or Retry ---
-	// ADDED: Check if calculated height is too small to be viable
-	isTooSmall := layoutInfo.TotalHeight < MINIMUM_VIABLE_ROW_HEIGHT
-	if calcErr == nil && !isTooSmall && layoutInfo.TotalHeight <= layoutAvailableHeight+1e-6 { // Add tolerance
-		// Fits on current page and is viable
-		fmt.Printf("Debug (Split-Group 2pic-%d): Group fits and is viable on current page (Page %d, height: %.2f <= available: %.2f)\n", groupNum, e.currentPage.Page, layoutInfo.TotalHeight, layoutAvailableHeight)
-		e.placePicturesInRow(groupPics, layoutInfo)
-		e.currentY += layoutInfo.TotalHeight // Update Y
-		return layoutInfo.TotalHeight, nil
-	} else {
-		// Doesn't fit, calculation error, or too small - Force New Page
-		reason := "Unknown reason"
-		if calcErr != nil {
-			reason = fmt.Sprintf("Initial calc failed: %v", calcErr)
-		} else if isTooSmall {
-			reason = fmt.Sprintf("Calculated height %.2f is less than minimum viable %.2f", layoutInfo.TotalHeight, MINIMUM_VIABLE_ROW_HEIGHT)
-		} else { // Must be layoutInfo.TotalHeight > layoutAvailableHeight
-			reason = fmt.Sprintf("Group doesn't fit (%.2f > %.2f)", layoutInfo.TotalHeight, layoutAvailableHeight)
-		}
-		fmt.Printf("Debug (Split-Group 2pic-%d): %s. Forcing new page.\n", groupNum, reason)
-
-		e.newPage()
-		newAvailableHeight := (e.marginTop + e.availableHeight) - e.currentY
-
-		// Retry calculation on the new page
-		fmt.Printf("Debug (Split-Group 2pic-%d): Retrying calculation & placement on new page (Page %d, available: %.2f)\n", groupNum, e.currentPage.Page, newAvailableHeight)
-		layoutInfo, calcErr = e.calculateRowLayout(groupPics, "row-of-2", newAvailableHeight)
-
-		// ADDED: Check if calculated height is too small on retry
-		isTooSmallRetry := layoutInfo.TotalHeight < MINIMUM_VIABLE_ROW_HEIGHT
-		if calcErr != nil || isTooSmallRetry || layoutInfo.TotalHeight > newAvailableHeight+1e-6 { // Add tolerance
-			// Handle error: Failed even on new page
-			errMsg := fmt.Sprintf("failed to place 2-pic group %d even on new page", groupNum)
-			if calcErr != nil {
-				errMsg += fmt.Sprintf(": %v", calcErr)
-			} else if isTooSmallRetry {
-				errMsg += fmt.Sprintf(" (height %.2f < min viable %.2f)", layoutInfo.TotalHeight, MINIMUM_VIABLE_ROW_HEIGHT)
-			} else {
-				errMsg += fmt.Sprintf(" (height %.2f > available %.2f)", layoutInfo.TotalHeight, newAvailableHeight)
-			}
-			fmt.Printf("Error: %s\n", errMsg)
-			return 0, errors.New(errMsg)
-		}
-		// Place successfully on new page
-		e.placePicturesInRow(groupPics, layoutInfo)
-		e.currentY += layoutInfo.TotalHeight // Update Y on new page
-		return layoutInfo.TotalHeight, nil
-	}
 }
