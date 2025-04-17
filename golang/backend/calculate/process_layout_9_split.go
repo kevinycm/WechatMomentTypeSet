@@ -1,282 +1,245 @@
 package calculate
 
 import (
-	"errors"
+	"errors" // Added for error handling
 	"fmt"
 	// Ensure math is imported if needed for calculations
-	// Added for error handling
+	// "math"
 )
 
-// processPictureGroup attempts to calculate and place a group of pictures (typically 3).
-// It handles pagination if the group doesn't fit the initial availableHeight.
-// It updates the engine's currentY state directly upon successful placement.
-// Returns the height used by the group and any critical error.
-func (e *ContinuousLayoutEngine) processPictureGroup(
-	groupPics []Picture,
-	groupNum int, // For logging (e.g., 1st, 2nd, 3rd group of 3)
-	layoutAvailableHeight float64,
-) (heightUsed float64, err error) {
+// ErrMinHeightConstraint is returned when pictures don't meet minimum height.
+// Defining it here as it seems to be missing.
+var ErrMinHeightConstraint = errors.New("minimum height constraint violated")
 
-	if len(groupPics) == 0 {
-		return 0, errors.New("processPictureGroup: called with empty picture group")
-	}
-	numPicsInGroup := len(groupPics)
-	var layoutInfo TemplateLayout
-	var calcErr error
-	var initialPlacementErr error // Store error from initial placement attempt
-
-	fmt.Printf("Debug (Split-Group %d): Attempting calculation. AvailableHeight: %.2f\n", groupNum, layoutAvailableHeight)
-
-	// Choose calculation function based on group size (primarily 3 for 9-split)
-	switch numPicsInGroup {
-	case 3:
-		// Use calculateLayout method that checks min height and returns error
-		layoutInfo, calcErr = e.calculateThreePicturesLayout(groupPics, layoutAvailableHeight)
-	// Add cases for 6, 4, 2 if this helper is generalized later
-	default:
-		return 0, fmt.Errorf("processPictureGroup: unsupported group size %d", numPicsInGroup)
-	}
-
-	// --- Check Fit and Place or Retry ---
-	if calcErr == nil && layoutInfo.TotalHeight <= layoutAvailableHeight+1e-6 { // Add tolerance
-		// Fits on current page
-		fmt.Printf("Debug (Split-Group %d): Group fits on current page (Page %d, height: %.2f <= available: %.2f)\n", groupNum, e.currentPage.Page, layoutInfo.TotalHeight, layoutAvailableHeight)
-		e.placePicturesInTemplate(groupPics, layoutInfo)
-		e.currentY += layoutInfo.TotalHeight // Update Y
-		return layoutInfo.TotalHeight, nil
-	} else {
-		// Doesn't fit or calculation error - Store the error and force New Page
-		if calcErr != nil {
-			initialPlacementErr = calcErr // Store calculation error (e.g., min height)
-			fmt.Printf("Debug (Split-Group %d): Initial calc failed: %v. Forcing new page.\n", groupNum, calcErr)
-		} else {
-			// Only reason left is height doesn't fit
-			initialPlacementErr = fmt.Errorf("group height %.2f exceeds available %.2f", layoutInfo.TotalHeight, layoutAvailableHeight)
-			fmt.Printf("Debug (Split-Group %d): Group doesn't fit (%.2f > %.2f). Forcing new page.\n", groupNum, layoutInfo.TotalHeight, layoutAvailableHeight)
-		}
-		e.newPage()
-		newAvailableHeight := (e.marginTop + e.availableHeight) - e.currentY
-
-		// Retry calculation on the new page
-		fmt.Printf("Debug (Split-Group %d): Retrying calculation & placement on new page (Page %d, available: %.2f)\n", groupNum, e.currentPage.Page, newAvailableHeight)
-		switch numPicsInGroup {
-		case 3:
-			layoutInfo, calcErr = e.calculateThreePicturesLayout(groupPics, newAvailableHeight)
-		default: // Should not happen based on initial check
-			return 0, fmt.Errorf("processPictureGroup: retry unsupported group size %d", numPicsInGroup)
-		}
-
-		// --- Error Handling for Retry ---
-		if calcErr != nil { // Check if calculation itself failed on retry
-			// Check if the error is the specific minimum height constraint failure
-			if calcErr.Error() == "no layout satisfied minimum height requirements for 3 pictures" {
-				fmt.Printf("Warning (Split-Group %d): Retry failed - layout constraints (min height) not met even on new page. Skipping group. Initial error: %v\n", groupNum, initialPlacementErr)
-				// Return 0 height and nil error - indicates failure but prevents higher-level errors if desired
-				return 0, fmt.Errorf("skipped group %d due to min height failure on new page (initial error: %w)", groupNum, initialPlacementErr)
-			} else {
-				// For any other calculation error on retry, report it
-				errMsg := fmt.Sprintf("failed to place group %d even on new page: %v (initial error: %v)", groupNum, calcErr, initialPlacementErr)
-				fmt.Printf("Error: %s\n", errMsg)
-				return 0, errors.New(errMsg) // Propagate other errors
-			}
-		} else if layoutInfo.TotalHeight > newAvailableHeight+1e-6 { // Check if it fits height-wise on retry
-			// Calculation succeeded, but still doesn't fit the new page height
-			errMsg := fmt.Sprintf("failed to place group %d even on new page (height %.2f > available %.2f) (initial error: %v)", groupNum, layoutInfo.TotalHeight, newAvailableHeight, initialPlacementErr)
-			fmt.Printf("Error: %s\n", errMsg)
-			return 0, errors.New(errMsg) // Propagate height overflow error
-		}
-		// --- End Error Handling ---
-
-		// If we reach here, retry was successful (calc OK, fits height)
-		fmt.Printf("Debug (Split-Group %d): Placed group successfully on new page (Page %d).\n", groupNum, e.currentPage.Page)
-		// Place successfully on new page
-		e.placePicturesInTemplate(groupPics, layoutInfo)
-		e.currentY += layoutInfo.TotalHeight // Update Y on new page
-		return layoutInfo.TotalHeight, nil
-	}
+// LayoutInfo stores results from layout calculation functions.
+// Defining a basic version here as it seems to be missing.
+type LayoutInfo struct {
+	TotalHeight float64
+	// Add other relevant fields if necessary, like individual item layouts:
+	// Items []ItemLayout // Assuming ItemLayout is defined elsewhere or needs definition
 }
 
-// processNinePicturesWithSplitLogic implements the new 1-5 rules.
-// It attempts 9-pic layout first, then falls back to 3+3+3 with proactive page breaks.
-// Relies on processPictureGroup to handle its own placement and internal page breaks if needed.
-// Returns the *initial* height calculated for the first successful placement (either 9-pic or first group)
-// or 0 if splitting occurs or fails completely. The caller should rely on e.currentY for final position.
+// processNinePicturesWithSplitLogic implements the new 1-10 rules for 9-picture layout.
+// It attempts various layout strategies (9-pic, 3-pic, 6-pic splits) across pages
+// based on available height and minimum picture requirements.
 func (e *ContinuousLayoutEngine) processNinePicturesWithSplitLogic(pictures []Picture, layoutAvailableHeight float64) float64 {
-	numPics := 9
-	if len(pictures) != numPics {
-		fmt.Printf("Error (process9Split): Incorrect number of pictures: %d\n", len(pictures))
-		return 0
+	numPics := len(pictures)
+	if numPics != 9 {
+		fmt.Printf("Error (process9SplitNew): Expected 9 pictures, got %d\n", numPics)
+		return 0 // Or handle error appropriately
 	}
 
-	// --- Rule 1: Attempt placing all 9 on the current page ---
-	fmt.Println("Debug (process9Split): Rule 1 - Attempting to place all 9 pictures initially.")
-	layoutInfo9, err9 := e.calculateNinePicturesLayout(pictures, layoutAvailableHeight)
+	const G1Start, G1End = 0, 3
+	const G2Start, G2End = 3, 6
+	const G3Start, G3End = 6, 9
+	const tolerance = 1e-6 // Tolerance for float comparisons
 
-	if err9 == nil && layoutInfo9.TotalHeight <= layoutAvailableHeight+1e-6 {
-		fmt.Println("Debug (process9Split): Rule 1 - Success! All 9 fit on current page directly.")
+	// Pre-declare ONLY variables needed for goto targets
+	var newPage2AvailableHeight float64
+	var layoutInfo6 TemplateLayout
+	var err6 error
+	var newPage3AvailableHeight float64
+	var layoutInfoG3New3 TemplateLayout
+	var errG3New3 error
+	// Add declarations for variables jumped over by goto
+	var layoutInfo9New TemplateLayout
+	var err9New error
+	var newPageAvailableHeight1 float64
+	var layoutInfoG1New TemplateLayout
+	var errG1New error
+	var newPageAvailableHeightG1 float64
+	var layoutInfoG2New TemplateLayout
+	var errG2New error
+	var newPageAvailableHeightG2 float64
+	var layoutInfoG3New TemplateLayout
+	var errG3New error
+	var layoutInfoG2New2 TemplateLayout
+	var errG2New2 error
+	var newPage2AvailableHeightG2 float64
+	var layoutInfoG3New2 TemplateLayout
+	var errG3New2 error
+
+	// --- Rule 1: Try placing all 9 on the current page ---
+	fmt.Printf("Debug (process9SplitNew): Rule 1 - Attempting 9-pic layout on page %d (Avail H: %.2f).\n", e.currentPage.Page, layoutAvailableHeight)
+	layoutInfo9, err9 := e.calculateNinePicturesLayout(pictures, layoutAvailableHeight) // Use := again
+	if err9 == nil && layoutInfo9.TotalHeight <= layoutAvailableHeight+tolerance {
+		fmt.Printf("Debug (process9SplitNew): Rule 1 - Success. Placing 9 pics (H: %.2f).\n", layoutInfo9.TotalHeight)
 		e.placePicturesInTemplate(pictures, layoutInfo9)
+		// Return height used, processPictures will update e.currentY
 		return layoutInfo9.TotalHeight
-	} else {
-		if err9 != nil {
-			fmt.Printf("Debug (process9Split): Rule 1 failed (calculation error: %v). Proceeding to split.\n", err9)
-		} else {
-			fmt.Printf("Debug (process9Split): Rule 1 failed (height %.2f > available %.2f). Proceeding to split.\n", layoutInfo9.TotalHeight, layoutAvailableHeight)
+	}
+	fmt.Printf("Debug (process9SplitNew): Rule 1 failed. Err: %v / Height: %.2f.\n", err9, layoutInfo9.TotalHeight)
+
+	// --- Rule 2: Try placing Group 1 (0-2) on the current page ---
+	fmt.Printf("Debug (process9SplitNew): Rule 2 - Attempting G1 (0-2) on page %d (Avail H: %.2f).\n", e.currentPage.Page, layoutAvailableHeight)
+	layoutInfoG1, errG1 := e.calculateThreePicturesLayout(pictures[G1Start:G1End], layoutAvailableHeight) // Use :=
+	if errG1 == nil && layoutInfoG1.TotalHeight <= layoutAvailableHeight+tolerance {
+		fmt.Printf("Debug (process9SplitNew): Rule 2 - Success. Placing G1 (H: %.2f).\n", layoutInfoG1.TotalHeight)
+		e.placePicturesInTemplate(pictures[G1Start:G1End], layoutInfoG1)
+		e.currentY += layoutInfoG1.TotalHeight
+		e.currentY += e.imageSpacing                                                                 // Add spacing after G1
+		currentAvailableHeight1 := layoutAvailableHeight - layoutInfoG1.TotalHeight - e.imageSpacing // Use :=
+
+		// Try placing Group 2 (3-5) on the same page
+		fmt.Printf("Debug (process9SplitNew): Rule 2 - Attempting G2 (3-5) on same page %d (Avail H: %.2f).\n", e.currentPage.Page, currentAvailableHeight1)
+		layoutInfoG2, errG2 := e.calculateThreePicturesLayout(pictures[G2Start:G2End], currentAvailableHeight1) // Use :=
+		if errG2 == nil && layoutInfoG2.TotalHeight <= currentAvailableHeight1+tolerance {
+			fmt.Printf("Debug (process9SplitNew): Rule 2 - Success. Placing G2 (H: %.2f).\n", layoutInfoG2.TotalHeight)
+			e.placePicturesInTemplate(pictures[G2Start:G2End], layoutInfoG2)
+			e.currentY += layoutInfoG2.TotalHeight
+			e.currentY += e.imageSpacing                                                                   // Add spacing after G2
+			currentAvailableHeight2 := currentAvailableHeight1 - layoutInfoG2.TotalHeight - e.imageSpacing // Use :=
+
+			// Try placing Group 3 (6-8) on the same page
+			fmt.Printf("Debug (process9SplitNew): Rule 2 - Attempting G3 (6-8) on same page %d (Avail H: %.2f).\n", e.currentPage.Page, currentAvailableHeight2)
+			layoutInfoG3, errG3 := e.calculateThreePicturesLayout(pictures[G3Start:G3End], currentAvailableHeight2) // Use :=
+			if errG3 == nil && layoutInfoG3.TotalHeight <= currentAvailableHeight2+tolerance {
+				fmt.Printf("Debug (process9SplitNew): Rule 2 - Success. Placing G3 (H: %.2f).\n", layoutInfoG3.TotalHeight)
+				e.placePicturesInTemplate(pictures[G3Start:G3End], layoutInfoG3)
+				e.currentY += layoutInfoG3.TotalHeight
+				return 0 // Placed 3+3+3 on one page
+			}
+			fmt.Printf("Debug (process9SplitNew): Rule 2 failed (G3 on same page). Err: %v / Height: %.2f. Go to new page for G3.\n", errG3, layoutInfoG3.TotalHeight)
+			goto NewPageForG3 // G3 failed, needs new page
 		}
+		fmt.Printf("Debug (process9SplitNew): Rule 2 failed (G2 on same page). Err: %v / Height: %.2f. Go to new page, try 6-pic (3-8).\n", errG2, layoutInfoG2.TotalHeight)
+		goto NewPageTrySixPic // G2 failed, try 6-pic split on new page
 	}
+	fmt.Printf("Debug (process9SplitNew): Rule 2 failed (G1 on page %d). Err: %v / Height: %.2f. Go to Rule 3.\n", e.currentPage.Page, errG1, layoutInfoG1.TotalHeight)
 
-	// --- Rule 1 Failed: Proceed to 3+3+3 Split ---
-	fmt.Println("Debug (process9Split): Rule 2 - Attempting 3+3+3 split.")
-
-	// --- Group 1 (Pics 0-2) ---
-	fmt.Println("Debug (process9Split): Processing Group 1 (0-2).")
-	// yBeforeG1 := e.currentY
-	heightG1, errG1 := e.processPictureGroup(pictures[0:3], 1, layoutAvailableHeight)
-	pageAfterG1 := e.currentPage.Page // Capture state AFTER processing G1
-	yAfterG1 := e.currentY
-
-	if errG1 != nil {
-		fmt.Printf("Error (process9Split): Failed to place Group 1 (0-2): %v. Aborting.\n", errG1)
-		// Even if G1 failed, Y might have changed if newPage was called internally. Reset?
-		// Let's assume processPictureGroup handles its state consistently on failure.
-		// For safety, maybe reset Y to before G1? Depends on desired behavior.
-		// e.currentY = yBeforeG1 // Optional: Reset Y if G1 fails critically
-		return 0
-	}
-	if heightG1 <= 1e-6 {
-		fmt.Println("Warning (process9Split): Group 1 (0-2) was skipped.")
-	}
-	fmt.Printf("Debug (process9Split): Group 1 done. Height: %.2f. Ended on Page: %d, Y: %.2f\n", heightG1, pageAfterG1, yAfterG1)
-
-	// --- Group 2 (Pics 3-5) ---
-	fmt.Println("Debug (process9Split): Processing Group 2 (3-5).")
-	// Check if spacing is needed *before* Group 2
-	availableHeightForG2 := 0.0
-	yBeforeProcessingG2 := yAfterG1 // Start from where G1 ended
-
-	// Check if G2 needs to start on a new page due to spacing vs available height *after* G1
-	if pageAfterG1 == e.currentPage.Page && heightG1 > 1e-6 { // Only add spacing if G1 was actually placed on the page G2 might start on.
-		requiredSpacingG2 := e.imageSpacing
-		currentAvailableHeightAfterG1 := (e.marginTop + e.availableHeight) - yAfterG1
-		if currentAvailableHeightAfterG1 < requiredSpacingG2 {
-			fmt.Printf("Debug (process9Split): Not enough space for image spacing before G2 (Avail %.2f < Spacing %.2f). Forcing new page.\n", currentAvailableHeightAfterG1, requiredSpacingG2)
-			e.newPage()
-			yBeforeProcessingG2 = e.currentY // Y is now marginTop on new page
-			availableHeightForG2 = (e.marginTop + e.availableHeight) - yBeforeProcessingG2
-		} else {
-			fmt.Printf("Debug (process9Split): Adding image spacing %.2f before Group 2.\n", requiredSpacingG2)
-			yBeforeProcessingG2 = yAfterG1 + requiredSpacingG2 // Calculate where G2 *should* start
-			e.currentY = yBeforeProcessingG2                   // Update engine state *before* calling processPictureGroup
-			availableHeightForG2 = currentAvailableHeightAfterG1 - requiredSpacingG2
-		}
-	} else {
-		// G2 starts on whatever page G1 left us on (potentially a new page)
-		// Y should already be correctly set by G1's processing or the newPage call above.
-		yBeforeProcessingG2 = e.currentY
-		availableHeightForG2 = (e.marginTop + e.availableHeight) - yBeforeProcessingG2
-	}
-
-	// Process Group 2
-	heightG2, errG2 := e.processPictureGroup(pictures[3:6], 2, availableHeightForG2)
-	pageAfterG2 := e.currentPage.Page // Capture state AFTER processing G2
-	yAfterG2 := e.currentY
-
-	if errG2 != nil {
-		fmt.Printf("Error (process9Split): Failed to place Group 2 (3-5): %v. Aborting remaining.\n", errG2)
-		// Reset Y to before G2 attempt?
-		// e.currentY = yBeforeProcessingG2 // Optional reset
-		return 0
-	}
-	if heightG2 <= 1e-6 {
-		fmt.Println("Warning (process9Split): Group 2 (3-5) was skipped.")
-	}
-	fmt.Printf("Debug (process9Split): Group 2 done. Height: %.2f. Ended on Page: %d, Y: %.2f\n", heightG2, pageAfterG2, yAfterG2)
-
-	// --- Group 3 (Pics 6-8) ---
-	fmt.Println("Debug (process9Split): Processing Group 3 (6-8).")
-	// Check if spacing is needed *before* Group 3
-	availableHeightForG3 := 0.0
-	yBeforeProcessingG3 := yAfterG2 // Start from where G2 ended
-
-	// Check if G3 needs to start on a new page due to spacing vs available height *after* G2
-	if pageAfterG2 == e.currentPage.Page && heightG2 > 1e-6 { // Only add spacing if G2 was actually placed on the page G3 might start on.
-		requiredSpacingG3 := e.imageSpacing
-		currentAvailableHeightAfterG2 := (e.marginTop + e.availableHeight) - yAfterG2
-		if currentAvailableHeightAfterG2 < requiredSpacingG3 {
-			fmt.Printf("Debug (process9Split): Not enough space for image spacing before G3 (Avail %.2f < Spacing %.2f). Forcing new page.\n", currentAvailableHeightAfterG2, requiredSpacingG3)
-			e.newPage()
-			yBeforeProcessingG3 = e.currentY // Y is now marginTop on new page
-			availableHeightForG3 = (e.marginTop + e.availableHeight) - yBeforeProcessingG3
-		} else {
-			fmt.Printf("Debug (process9Split): Adding image spacing %.2f before Group 3.\n", requiredSpacingG3)
-			yBeforeProcessingG3 = yAfterG2 + requiredSpacingG3 // Calculate where G3 *should* start
-			e.currentY = yBeforeProcessingG3                   // Update engine state *before* calling processPictureGroup
-			availableHeightForG3 = currentAvailableHeightAfterG2 - requiredSpacingG3
-		}
-	} else {
-		// G3 starts on whatever page G2 left us on (potentially a new page)
-		// Y should already be correctly set by G2's processing or the newPage call above.
-		yBeforeProcessingG3 = e.currentY
-		availableHeightForG3 = (e.marginTop + e.availableHeight) - yBeforeProcessingG3
-	}
-
-	// Process Group 3
-	heightG3, errG3 := e.processPictureGroup(pictures[6:9], 3, availableHeightForG3)
-	// pageAfterG3 := e.currentPage.Page // Capture final state if needed
-	// yAfterG3 := e.currentY
-
-	if errG3 != nil {
-		fmt.Printf("Error (process9Split): Failed to place Group 3 (6-8): %v.\n", errG3)
-		// Reset Y to before G3 attempt?
-		// e.currentY = yBeforeProcessingG3 // Optional reset
-		return 0
-	}
-	if heightG3 <= 1e-6 {
-		fmt.Println("Warning (process9Split): Group 3 (6-8) was skipped.")
-	}
-	// Final Y position is now managed by processPictureGroup calls.
-	// fmt.Printf("Debug (process9Split): Group 3 done. Height: %.2f. Ended on Page: %d, Y: %.2f\n", heightG3, pageAfterG3, yAfterG3)
-
-	fmt.Println("Debug (process9Split): Completed 3+3+3 split processing.")
-	// Return 0 to indicate split path was taken. Caller relies on final e.currentY.
-	return 0
-}
-
-// placeAllNineOnNewPage is a helper function specifically for retrying the 9-picture layout on a new page.
-func (e *ContinuousLayoutEngine) placeAllNineOnNewPage(pictures []Picture) float64 {
+	// --- Rule 3: G1 didn't fit current page. Create new page. Try 9-pic again. ---
+	fmt.Printf("Debug (process9SplitNew): Rule 3 - New page (Page %d).\n", e.currentPage.Page+1)
 	e.newPage()
-	newAvailableHeight := (e.marginTop + e.availableHeight) - e.currentY
-	fmt.Printf("Debug (placeAllNineOnNewPage): Retrying 9-pic layout on new page (Page %d, Available H: %.2f)\n", e.currentPage.Page, newAvailableHeight)
-	layoutInfo, err := e.calculateNinePicturesLayout(pictures, newAvailableHeight)
+	e.currentY = e.marginTop                    // Reset Y for the new page
+	newPageAvailableHeight1 = e.availableHeight // Use =
 
-	if err == nil && layoutInfo.TotalHeight <= newAvailableHeight+1e-6 {
-		fmt.Println("Debug (placeAllNineOnNewPage): Successfully placed all 9 on new page.")
-		e.placePicturesInTemplate(pictures, layoutInfo)
-		return layoutInfo.TotalHeight
+	fmt.Printf("Debug (process9SplitNew): Rule 3 - Attempting 9-pic layout on new page %d (Avail H: %.2f).\n", e.currentPage.Page, newPageAvailableHeight1)
+	layoutInfo9New, err9New = e.calculateNinePicturesLayout(pictures, newPageAvailableHeight1) // Use =
+	if err9New == nil && layoutInfo9New.TotalHeight <= newPageAvailableHeight1+tolerance {
+		fmt.Printf("Debug (process9SplitNew): Rule 3 - Success. Placing 9 pics (H: %.2f) on new page.\n", layoutInfo9New.TotalHeight)
+		e.placePicturesInTemplate(pictures, layoutInfo9New)
+		// Update Y directly, return 0 as split (across pages) happened
+		e.currentY += layoutInfo9New.TotalHeight
+		return 0
 	}
+	fmt.Printf("Debug (process9SplitNew): Rule 3 failed (9-pic on new page). Err: %v / Height: %.2f. Go to Rule 4.\n", err9New, layoutInfo9New.TotalHeight)
 
-	// Failure even on a new page
-	errMsg := "unknown error"
-	if err != nil {
-		errMsg = err.Error()
-	} else if layoutInfo.TotalHeight > newAvailableHeight {
-		errMsg = fmt.Sprintf("height %.2f exceeds available %.2f", layoutInfo.TotalHeight, newAvailableHeight)
+	// --- Rule 4: 9-pic failed on new page. Try G1 (0-2) on new page. ---
+	fmt.Printf("Debug (process9SplitNew): Rule 4 - Attempting G1 (0-2) on new page %d (Avail H: %.2f).\n", e.currentPage.Page, newPageAvailableHeight1)
+	layoutInfoG1New, errG1New = e.calculateThreePicturesLayout(pictures[G1Start:G1End], newPageAvailableHeight1) // Use =
+	if errG1New == nil && layoutInfoG1New.TotalHeight <= newPageAvailableHeight1+tolerance {
+		fmt.Printf("Debug (process9SplitNew): Rule 4 - Success. Placing G1 (H: %.2f) on new page.\n", layoutInfoG1New.TotalHeight)
+		e.placePicturesInTemplate(pictures[G1Start:G1End], layoutInfoG1New)
+		e.currentY += layoutInfoG1New.TotalHeight
+		e.currentY += e.imageSpacing                                                                      // Add spacing after G1
+		newPageAvailableHeightG1 = newPageAvailableHeight1 - layoutInfoG1New.TotalHeight - e.imageSpacing // Use =
+
+		// Try placing Group 2 (3-5) on the same new page
+		fmt.Printf("Debug (process9SplitNew): Rule 4 - Attempting G2 (3-5) on same new page %d (Avail H: %.2f).\n", e.currentPage.Page, newPageAvailableHeightG1)
+		layoutInfoG2New, errG2New = e.calculateThreePicturesLayout(pictures[G2Start:G2End], newPageAvailableHeightG1) // Use =
+		if errG2New == nil && layoutInfoG2New.TotalHeight <= newPageAvailableHeightG1+tolerance {
+			fmt.Printf("Debug (process9SplitNew): Rule 4 - Success. Placing G2 (H: %.2f) on new page.\n", layoutInfoG2New.TotalHeight)
+			e.placePicturesInTemplate(pictures[G2Start:G2End], layoutInfoG2New)
+			e.currentY += layoutInfoG2New.TotalHeight
+			e.currentY += e.imageSpacing                                                                       // Add spacing after G2
+			newPageAvailableHeightG2 = newPageAvailableHeightG1 - layoutInfoG2New.TotalHeight - e.imageSpacing // Use =
+
+			// Try placing Group 3 (6-8) on the same new page
+			fmt.Printf("Debug (process9SplitNew): Rule 4 - Attempting G3 (6-8) on same new page %d (Avail H: %.2f).\n", e.currentPage.Page, newPageAvailableHeightG2)
+			layoutInfoG3New, errG3New = e.calculateThreePicturesLayout(pictures[G3Start:G3End], newPageAvailableHeightG2) // Use =
+			if errG3New == nil && layoutInfoG3New.TotalHeight <= newPageAvailableHeightG2+tolerance {
+				fmt.Printf("Debug (process9SplitNew): Rule 4 - Success. Placing G3 (H: %.2f) on new page.\n", layoutInfoG3New.TotalHeight)
+				e.placePicturesInTemplate(pictures[G3Start:G3End], layoutInfoG3New)
+				e.currentY += layoutInfoG3New.TotalHeight
+				return 0 // Placed G1+G2+G3 on the new page
+			}
+			fmt.Printf("Debug (process9SplitNew): Rule 4 failed (G3 on new page). Err: %v / Height: %.2f. Go to new page for G3.\n", errG3New, layoutInfoG3New.TotalHeight)
+			goto NewPageForG3 // G3 failed, needs new page
+		}
+		fmt.Printf("Debug (process9SplitNew): Rule 4 failed (G2 on new page). Err: %v / Height: %.2f. Go to new page, try 6-pic (3-8).\n", errG2New, layoutInfoG2New.TotalHeight)
+		goto NewPageTrySixPic // G2 failed, try 6-pic split on new page
 	}
-	fmt.Printf("Error (placeAllNineOnNewPage): Failed to place all 9 pictures even on a new page: %s. Returning 0.\n", errMsg)
-	// Decide how to handle this critical failure. Returning 0 might lead to lost pictures.
-	// Consider returning an error or a special value if the caller needs to know.
-	// For now, returning 0 as per original structure's likely expectation.
-	return 0
+	// Rule 4 failed: G1 couldn't even fit on the new page.
+	// This implies a potential issue, like G1 pictures violating min height or page height being too small.
+	// The most robust action is to try placing G1 on *another* new page, then continue.
+	// However, the rules don't explicitly cover this. Current logic falls through to Rule 5 (New Page, Try 6-pic 3-8).
+	// Let's stick to the rules as interpreted, which means proceeding as if G1 *was* placed (implicitly failing it here)
+	// and trying the remaining 6 on a new page. This might lose G1 if it truly couldn't fit.
+	fmt.Printf("Warning (process9SplitNew): Rule 4 failed critically (G1 on new page). Err: %v / Height: %.2f. Proceeding to Rule 5 (may lose G1 pics).\n", errG1New, layoutInfoG1New.TotalHeight)
+	goto NewPageTrySixPic // Treat as if G1 placed, but G2 failed, leading to Rule 5.
+
+	// --- Goto Labels ---
+
+NewPageTrySixPic:
+	// --- Rule 5: Create another new page. Try 6-pic (3-8). ---
+	fmt.Printf("Debug (process9SplitNew): Rule 5 - New page (Page %d).\n", e.currentPage.Page+1)
+	e.newPage() // Create Page 3 (or next page)
+	e.currentY = e.marginTop
+	newPage2AvailableHeight = e.availableHeight // Use assignment = (already declared)
+
+	fmt.Printf("Debug (process9SplitNew): Rule 5 - Attempting 6-pic layout (3-8) on new page %d (Avail H: %.2f).\n", e.currentPage.Page, newPage2AvailableHeight)
+	layoutInfo6, err6 = e.calculateSixPicturesLayout(pictures[G2Start:G3End], newPage2AvailableHeight) // Use assignment = (already declared)
+	if err6 == nil && layoutInfo6.TotalHeight <= newPage2AvailableHeight+tolerance {
+		fmt.Printf("Debug (process9SplitNew): Rule 5 - Success. Placing 6 pics (3-8) (H: %.2f) on new page %d.\n", layoutInfo6.TotalHeight, e.currentPage.Page)
+		e.placePicturesInTemplate(pictures[G2Start:G3End], layoutInfo6)
+		e.currentY += layoutInfo6.TotalHeight
+		return 0 // Split success (G1 + G2/G3 as 6)
+	}
+	fmt.Printf("Debug (process9SplitNew): Rule 5 failed (6-pic on new page %d, Avail: %.2f). Err: %v / Height: %.2f.\n", e.currentPage.Page, newPage2AvailableHeight, err6, layoutInfo6.TotalHeight)
+
+	// --- Rule 6: 6-pic failed on new page. Try G2 (3-5) on this new page. ---
+	fmt.Printf("Debug (process9SplitNew): Rule 6 - Attempting G2 (3-5) on new page %d (Avail H: %.2f).\n", e.currentPage.Page, newPage2AvailableHeight)
+	layoutInfoG2New2, errG2New2 = e.calculateThreePicturesLayout(pictures[G2Start:G2End], newPage2AvailableHeight) // Use =
+	if errG2New2 == nil && layoutInfoG2New2.TotalHeight <= newPage2AvailableHeight+tolerance {
+		fmt.Printf("Debug (process9SplitNew): Rule 6 - Success. Placing G2 (H: %.2f) on new page %d.\n", layoutInfoG2New2.TotalHeight, e.currentPage.Page)
+		e.placePicturesInTemplate(pictures[G2Start:G2End], layoutInfoG2New2)
+		e.currentY += layoutInfoG2New2.TotalHeight
+		e.currentY += e.imageSpacing                                                                        // Add spacing after G2
+		newPage2AvailableHeightG2 = newPage2AvailableHeight - layoutInfoG2New2.TotalHeight - e.imageSpacing // Use =
+
+		// Try placing Group 3 (6-8) on the same (Rule 5's new) page
+		fmt.Printf("Debug (process9SplitNew): Rule 6 - Attempting G3 (6-8) on same new page %d (Avail H: %.2f).\n", e.currentPage.Page, newPage2AvailableHeightG2)
+		layoutInfoG3New2, errG3New2 = e.calculateThreePicturesLayout(pictures[G3Start:G3End], newPage2AvailableHeightG2) // Use =
+		if errG3New2 == nil && layoutInfoG3New2.TotalHeight <= newPage2AvailableHeightG2+tolerance {
+			fmt.Printf("Debug (process9SplitNew): Rule 6 - Success. Placing G3 (H: %.2f) on new page %d.\n", layoutInfoG3New2.TotalHeight, e.currentPage.Page)
+			e.placePicturesInTemplate(pictures[G3Start:G3End], layoutInfoG3New2)
+			e.currentY += layoutInfoG3New2.TotalHeight
+			return 0 // Placed G2+G3 on the new page after G1
+		}
+		fmt.Printf("Debug (process9SplitNew): Rule 6 failed (G3 on same new page). Err: %v / Height: %.2f. Go to new page for G3.\n", errG3New2, layoutInfoG3New2.TotalHeight)
+		goto NewPageForG3 // G3 failed, needs new page
+	}
+	fmt.Printf("Debug (process9SplitNew): Rule 6 failed (G2 on new page %d). Err: %v / Height: %.2f. Go to Rule 7 (new page for G3).\n", e.currentPage.Page, errG2New2, layoutInfoG2New2.TotalHeight)
+	// G2 failed on this new page, fall through to create another new page specifically for G3.
+	goto NewPageForG3
+
+NewPageForG3:
+	// --- Rule 7: Create another new page. Place G3 (6-8). ---
+	fmt.Printf("Debug (process9SplitNew): Rule 7 - New page (Page %d) for G3 (6-8).\n", e.currentPage.Page+1)
+	e.newPage() // Create Page 4 (or next page)
+	e.currentY = e.marginTop
+	newPage3AvailableHeight = e.availableHeight // Use assignment = (already declared)
+
+	fmt.Printf("Debug (process9SplitNew): Rule 7 - Attempting G3 (6-8) on new page %d (Avail H: %.2f).\n", e.currentPage.Page, newPage3AvailableHeight)
+	layoutInfoG3New3, errG3New3 = e.calculateThreePicturesLayout(pictures[G3Start:G3End], newPage3AvailableHeight) // Use assignment = (already declared)
+	if errG3New3 == nil && layoutInfoG3New3.TotalHeight <= newPage3AvailableHeight+tolerance {
+		fmt.Printf("Debug (process9SplitNew): Rule 7 - Success. Placing G3 (H: %.2f) on new page %d.\n", layoutInfoG3New3.TotalHeight, e.currentPage.Page)
+		e.placePicturesInTemplate(pictures[G3Start:G3End], layoutInfoG3New3)
+		e.currentY += layoutInfoG3New3.TotalHeight
+		return 0 // Split success
+	} else {
+		// Rule 7 Failed: G3 failed even on its own dedicated page.
+		fmt.Printf("Error (process9SplitNew): Rule 7 - Critical failure. G3 (6-8) failed to place even on new page %d (Avail H: %.2f). Err: %v / Height: %.2f. Aborting placement of G3. Pics 6-8 lost.\n", e.currentPage.Page, newPage3AvailableHeight, errG3New3, layoutInfoG3New3.TotalHeight)
+		// Propagate the specific error if it's ErrMinHeightConstraint
+		if errors.Is(errG3New3, ErrMinHeightConstraint) {
+			// Return the error? Or just 0? Current approach is return 0 and log.
+			// The calling function processPictures might need to know *why* it failed.
+			// For now, stick to returning 0 as per the general pattern for splits/failures.
+		}
+		return 0 // Indicate split occurred, but G3 failed
+	}
 }
 
-// --- Helper function dependencies (ensure these are available) ---
-// func (e *ContinuousLayoutEngine) processPictureGroup(...) -> Needs access
-// func (e *ContinuousLayoutEngine) calculateNinePicturesLayout(...) -> Needs access
-// func (e *ContinuousLayoutEngine) processSixPicturesWithSplitLogic(...) -> Needs access
-// func (e *ContinuousLayoutEngine) processThreePicturesWithSplitLogic(...) -> Needs access
-// func removePicturesAdded(...) -> Needs definition or import
-// func getEntryPictureCount(...) -> Needs definition or import
-// func GetPictureType(...) -> Needs definition or import
-// func GetRequiredMinHeight(...) -> Needs definition or import
-// func (e *ContinuousLayoutEngine) placePicturesInTemplate(...) -> Needs access
-// func (e *ContinuousLayoutEngine) newPage() -> Needs access
-// func (e *ContinuousLayoutEngine) requiredSpacingBeforeElement() -> Needs access
+// Removed processPictureGroup function
+
+// Removed placeAllNineOnNewPage function

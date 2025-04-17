@@ -28,8 +28,8 @@ func NewContinuousLayoutEngine(entries []Entry) *ContinuousLayoutEngine {
 		minTallHeight:  800,   // Min height for Tall pics (AR <= 1/3)
 
 		// Added slices for 1-9 pictures (index 0 unused)
-		minLandscapeHeights: []float64{600, 600, 400, 600, 600, 600, 600, 600, 600}, // 横图 1-9 张	横图
-		minPortraitHeights:  []float64{800, 800, 600, 800, 800, 800, 800, 800, 800}, // 竖图 1-9 张	竖图
+		minLandscapeHeights: []float64{600, 600, 400, 600, 600, 600, 600, 600, 600}, // 横图 1-9 张
+		minPortraitHeights:  []float64{800, 800, 600, 800, 800, 800, 800, 800, 800}, // 竖图 1-9 张
 
 		singleImageHeight: 3130, // 设置单张竖图的最大高度
 		singleImageWidth:  2124, // 设置单张横图的最大度

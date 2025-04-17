@@ -1,9 +1,191 @@
 package calculate
 
 import (
+	"errors"
 	"fmt"
 	"math"
 )
+
+// ErrLayoutExceedsAvailableHeight indicates the calculated layout cannot fit.
+var ErrLayoutExceedsAvailableHeight = errors.New("calculated layout height exceeds available height")
+
+// calculateTwoPicturesLayout calculates the layout information for two pictures
+// without placing them. It determines the layout type (up/down or left/right),
+// calculates dimensions based on available space, checks minimum height constraints,
+// and returns the layout info (Positions, Dimensions, TotalHeight, TotalWidth) and an error.
+func (e *ContinuousLayoutEngine) calculateTwoPicturesLayout(pictures []Picture, layoutAvailableHeight float64) (TemplateLayout, error) {
+	const tolerance = 1e-6 // Define tolerance locally
+	if len(pictures) != 2 {
+		return TemplateLayout{}, fmt.Errorf("calculateTwoPicturesLayout requires exactly 2 pictures, got %d", len(pictures))
+	}
+
+	pic1, pic2 := pictures[0], pictures[1]
+	ar1, ar2 := 1.0, 1.0 // Default ARs
+	validAR1, validAR2 := false, false
+	if pic1.Height > 0 && pic1.Width > 0 {
+		ar1 = float64(pic1.Width) / float64(pic1.Height)
+		validAR1 = true
+	}
+	if pic2.Height > 0 && pic2.Width > 0 {
+		ar2 = float64(pic2.Width) / float64(pic2.Height)
+		validAR2 = true
+	}
+
+	if !validAR1 || !validAR2 || layoutAvailableHeight <= 1e-6 {
+		fmt.Printf("Warning: Cannot calculate layout for 2 pictures due to invalid AR or zero available height.\\n")
+		return TemplateLayout{}, fmt.Errorf("invalid input: non-positive available height or invalid picture dimensions")
+	}
+
+	type1 := GetPictureType(ar1)
+	type2 := GetPictureType(ar2)
+
+	layoutType := ""
+	switch {
+	case (type1 == "wide" && type2 == "tall"), (type1 == "tall" && type2 == "wide"):
+		layoutType = "up_down"
+	case (type1 == "wide" && type2 == "landscape"), (type1 == "landscape" && type2 == "wide"):
+		layoutType = "up_down"
+	case (type1 == "wide" && type2 == "portrait"), (type1 == "portrait" && type2 == "wide"):
+		layoutType = "up_down"
+	case (type1 == "tall" && type2 == "landscape"), (type1 == "landscape" && type2 == "tall"):
+		layoutType = "up_down"
+	default:
+		layoutType = "left_right"
+	}
+
+	var finalLayout TemplateLayout
+	calculatedTotalHeight := 0.0
+	minRequiredHeight := 0.0
+
+	positions := make([][]float64, 2)
+	dimensions := make([][]float64, 2)
+
+	switch layoutType {
+	case "up_down":
+		// Calculate initial dimensions based on fitting available width
+		initialWidth1 := e.availableWidth
+		initialHeight1 := initialWidth1 / ar1
+		initialWidth2 := e.availableWidth
+		initialHeight2 := initialWidth2 / ar2
+
+		totalRequiredHeight := initialHeight1 + initialHeight2 + e.imageSpacing
+		scale := 1.0
+
+		if totalRequiredHeight > layoutAvailableHeight {
+			scale = layoutAvailableHeight / totalRequiredHeight
+		}
+
+		finalHeight1 := initialHeight1 * scale
+		finalWidth1 := initialWidth1 * scale // Width scales proportionally with height
+		finalHeight2 := initialHeight2 * scale
+		finalWidth2 := initialWidth2 * scale // Width scales proportionally with height
+		calculatedTotalHeight = finalHeight1 + finalHeight2 + e.imageSpacing
+
+		minRequiredHeight = GetRequiredMinHeight(e, "up_down", 2)
+
+		// *** Check if initial layout fits available height BEFORE min height check ***
+		if totalRequiredHeight > layoutAvailableHeight+tolerance {
+			fmt.Printf("Debug (calculate2 UpDown): Initial required height %.2f exceeds available %.2f\\n", totalRequiredHeight, layoutAvailableHeight)
+			return TemplateLayout{TotalHeight: totalRequiredHeight}, ErrLayoutExceedsAvailableHeight // Return specific error
+		}
+
+		// Fill Positions and Dimensions for Up/Down
+		// Centering horizontally
+		startX1 := 0.0
+		if finalWidth1 < e.availableWidth {
+			startX1 = (e.availableWidth - finalWidth1) / 2
+		}
+		startX2 := 0.0
+		if finalWidth2 < e.availableWidth {
+			startX2 = (e.availableWidth - finalWidth2) / 2
+		}
+		positions[0] = []float64{startX1, 0}
+		dimensions[0] = []float64{finalWidth1, finalHeight1}
+		positions[1] = []float64{startX2, finalHeight1 + e.imageSpacing}
+		dimensions[1] = []float64{finalWidth2, finalHeight2}
+
+		finalLayout.TotalWidth = e.availableWidth // Up/down layout uses full available width
+
+	case "left_right":
+		// Use uniform height logic to get dimensions
+		finalRowWidths, _, finalRowHeight := e.calculateUniformRowHeightLayout(pictures, e.availableWidth)
+
+		calculatedTotalHeight = finalRowHeight // For left/right, total height is the row height
+		minRequiredHeight = GetRequiredMinHeight(e, "left_right", 2)
+
+		// *** Check if initial layout fits available height BEFORE min height check ***
+		if calculatedTotalHeight > layoutAvailableHeight+tolerance { // Check rowHeight before scaling
+			fmt.Printf("Debug (calculate2 LeftRight): Initial required height %.2f exceeds available %.2f\\n", calculatedTotalHeight, layoutAvailableHeight)
+			return TemplateLayout{TotalHeight: calculatedTotalHeight}, ErrLayoutExceedsAvailableHeight // Return specific error
+		}
+
+		// Fill Positions and Dimensions for Left/Right
+		totalImageWidth := 0.0
+		for _, w := range finalRowWidths {
+			totalImageWidth += w
+		}
+		totalRowWidth := totalImageWidth + e.imageSpacing // Only one space between two images
+		startX := 0.0
+		if totalRowWidth < e.availableWidth {
+			startX = (e.availableWidth - totalRowWidth) / 2 // Center the row
+		}
+		currentX := startX
+		positions[0] = []float64{currentX, 0}
+		dimensions[0] = []float64{finalRowWidths[0], finalRowHeight}
+		currentX += finalRowWidths[0] + e.imageSpacing
+		positions[1] = []float64{currentX, 0}
+		dimensions[1] = []float64{finalRowWidths[1], finalRowHeight}
+
+		finalLayout.TotalWidth = e.availableWidth // Assume it uses available width conceptually
+	}
+
+	// Minimum Height Check (Applied AFTER scaling to fit available height)
+	// Need to recalculate scaled height if scaling happened implicitly in calculateUniformRowHeightLayout or up/down scaling
+	finalScaledHeight := calculatedTotalHeight // Start with the height that supposedly fits
+	if layoutType == "left_right" {
+		// Recalculate scaled height for left/right just to be sure, using the returned finalRowHeight
+		_, _, finalRowHeightCheck := e.calculateUniformRowHeightLayout(pictures, e.availableWidth)
+		if finalRowHeightCheck > layoutAvailableHeight+tolerance { // If it still exceeds after internal scaling? This check might be redundant but safe.
+			// Already handled by the check above
+		} else {
+			finalScaledHeight = finalRowHeightCheck
+		}
+	} else { // up_down
+		// Recalculate based on scale factor applied
+		initialWidth1_check := e.availableWidth
+		initialHeight1_check := initialWidth1_check / ar1
+		initialWidth2_check := e.availableWidth
+		initialHeight2_check := initialWidth2_check / ar2
+		totalRequiredHeight_check := initialHeight1_check + initialHeight2_check + e.imageSpacing
+		scale_check := 1.0
+		if totalRequiredHeight_check > layoutAvailableHeight {
+			scale_check = layoutAvailableHeight / totalRequiredHeight_check
+		}
+		finalHeight1_check := initialHeight1_check * scale_check
+		finalHeight2_check := initialHeight2_check * scale_check
+		finalScaledHeight = finalHeight1_check + finalHeight2_check + e.imageSpacing
+	}
+
+	if finalScaledHeight < minRequiredHeight-1e-6 { // Check final scaled height against min required
+		fmt.Printf("Debug (calculate2): Final scaled layout height %.2f violates minimum height constraint %.2f\\n", finalScaledHeight, minRequiredHeight)
+		// Return calculated info even on error, caller might need it
+		finalLayout.Positions = positions
+		finalLayout.Dimensions = dimensions
+		finalLayout.TotalHeight = finalScaledHeight // Return the height that violated constraint
+		return finalLayout, ErrMinHeightConstraint
+	}
+
+	// Ensure final height doesn't exceed available height due to FP math
+	if finalScaledHeight > layoutAvailableHeight+1e-6 {
+		finalScaledHeight = layoutAvailableHeight
+	}
+
+	finalLayout.Positions = positions
+	finalLayout.Dimensions = dimensions
+	finalLayout.TotalHeight = finalScaledHeight // Return the final valid height
+
+	return finalLayout, nil
+}
 
 // --- Actual implementation for the refactored function ---
 // processTwoPicturesLayoutAndPlace calculates and places two pictures based on their types
