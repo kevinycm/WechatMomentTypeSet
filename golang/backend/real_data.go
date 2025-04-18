@@ -6,7 +6,7 @@ import (
 	"log"
 	"strings"
 	"time"
-	"wechatmomenttypeset/backend/calculate"
+	"wechatmomenttypeset/backend/waterfall"
 
 	_ "github.com/go-sql-driver/mysql"
 )
@@ -25,7 +25,7 @@ type Element struct {
 	ID       int                 `json:"id"`
 	Time     string              `json:"time"`
 	Text     string              `json:"text"`
-	Pictures []calculate.Picture `json:"pictures"`
+	Pictures []waterfall.Picture `json:"pictures"`
 }
 
 // RealData stores the data fetched from MySQL
@@ -113,7 +113,7 @@ func InitRealData(dsn string) error {
 }
 
 // processPictureInfo converts media_infos and qiniu_media_urls into Picture slice
-func processPictureInfo(mediaInfos, qiniuMediaURLs string) ([]calculate.Picture, error) {
+func processPictureInfo(mediaInfos, qiniuMediaURLs string) ([]waterfall.Picture, error) {
 	log.Printf("Processing picture info: mediaInfos='%s', qiniuMediaURLs='%s'", mediaInfos, qiniuMediaURLs)
 	if mediaInfos == "" || qiniuMediaURLs == "" {
 		log.Println(" MediaInfos or QiniuMediaURLs is empty, returning nil.")
@@ -137,7 +137,7 @@ func processPictureInfo(mediaInfos, qiniuMediaURLs string) ([]calculate.Picture,
 		// Continue processing, but might result in fewer pictures than dimensions
 	}
 
-	var pictures []calculate.Picture
+	var pictures []waterfall.Picture
 	numPics := len(dimensions) / 2
 	log.Printf(" Expected number of pictures based on dimensions: %d", numPics)
 
@@ -179,7 +179,7 @@ func processPictureInfo(mediaInfos, qiniuMediaURLs string) ([]calculate.Picture,
 		}
 
 		// Create Picture entry
-		picture := calculate.Picture{
+		picture := waterfall.Picture{
 			Index:  i,
 			Width:  width,
 			Height: height,

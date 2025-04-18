@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"wechatmomenttypeset/backend/calculate"
+	"wechatmomenttypeset/backend/waterfall"
 )
 
 // Server represents the HTTP server
@@ -87,12 +87,12 @@ func (s *Server) handleContinuousLayoutReal(w http.ResponseWriter, r *http.Reque
 	})
 
 	// 按年月分组
-	yearMonthGroups := make(map[string][]calculate.Entry)
+	yearMonthGroups := make(map[string][]waterfall.Entry)
 	yearMonthKeys := make([]string, 0)
 	for _, id := range ids {
 		element := RealData[id]
 		// Convert models.NewMoment (represented by Element here) to calculate.Entry
-		entry := calculate.Entry{
+		entry := waterfall.Entry{
 			ID:       int64(element.ID),
 			Time:     element.Time,
 			Text:     element.Text,
@@ -114,7 +114,7 @@ func (s *Server) handleContinuousLayoutReal(w http.ResponseWriter, r *http.Reque
 	sort.Sort(sort.Reverse(sort.StringSlice(yearMonthKeys)))
 
 	// 处理每个年月组的数据
-	var allPages []calculate.ContinuousLayoutPage
+	var allPages []waterfall.ContinuousLayoutPage
 	pageNumber := 1
 
 	for _, yearMonthKey := range yearMonthKeys {
@@ -132,17 +132,17 @@ func (s *Server) handleContinuousLayoutReal(w http.ResponseWriter, r *http.Reque
 		month, _ := strconv.Atoi(parts[1])
 		yearMonth := fmt.Sprintf("%d年%d月", year, month)
 
-		insertPage := calculate.ContinuousLayoutPage{
+		insertPage := waterfall.ContinuousLayoutPage{
 			Page:      pageNumber,
 			IsInsert:  true,
 			YearMonth: yearMonth,
-			Entries:   []calculate.PageEntry{},
+			Entries:   []waterfall.PageEntry{},
 		}
 		allPages = append(allPages, insertPage)
 		pageNumber++
 
 		// 处理该年月的条目
-		engine := calculate.NewContinuousLayoutEngine(entries)
+		engine := waterfall.NewContinuousLayoutEngine(entries)
 		pages, err := engine.ProcessEntries()
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -187,7 +187,7 @@ func convertAreaTo72DPI(area [][]float64) [][]float64 {
 }
 
 // convertPageTo72DPI converts all coordinates in a page from 300DPI to 72DPI
-func convertPageTo72DPI(page calculate.ContinuousLayoutPage) calculate.ContinuousLayoutPage {
+func convertPageTo72DPI(page waterfall.ContinuousLayoutPage) waterfall.ContinuousLayoutPage {
 	// 不要转换页码，保持原样
 	// page.Page = int(convertTo72DPI(float64(page.Page)))
 
